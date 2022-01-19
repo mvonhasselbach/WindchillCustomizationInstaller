@@ -361,7 +361,7 @@ will be copied to. Depending on their type they will be moved intelligently to o
 
 # Installation
 
-To install the Generic Installer download the installer.zip from the [Releases link](releases) on the right and extract it to <wt.home>.
+To install the Generic Installer download the installer.zip from the [Releases link](../../releases) on the right and extract it to <wt.home>.
 
 
 ## 
