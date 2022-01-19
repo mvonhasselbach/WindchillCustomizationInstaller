@@ -1,0 +1,108 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== 
+     Feb 13, 2008 7:50:17 PM                                                        
+
+     resourceBuildwtCustom: sript to include in installer to build custom rb's
+     
+     extensions of existing ResourceBundles should be done in the following way:
+     1. add the new entries that you want to append to the rbInfo files in  the modify/wtcustom area
+     2. add this script to the scripts/preload folder
+		e.g. if you want to add a lifecycle state do the following:
+	  1. create the file <customizationRoot>/modify/wtcustom/wt/lifecycle/StateRB.rbInfo with the following content:
+			INTRANSLATION.value=In Translation
+			MASTERDOCINWORK.value=MasterDoc In Work
+		to add the two states 'In Translation' and 'MasterDoc In Work'.
+	  2. Redo this for all required locales in the corresponding files, e.g. <customizationRoot>/modify/wtcustom/wt/lifecycle/StateRB_de.rbInfo for german, ...
+	  3. Add this script to <customizationRoot>/scripts/preload folder
+	  
+	  on install the contnet of trhe files will be appended to the corresponding files inj <wt_home> if existant or just copied in if not. 
+	  This is done by the ootb installer build.xml script. This script will then check for all rbInfo files in <wt_home>/wtcustom if they have an rbInfo header, if not 
+	  (i.e. the delta file has been copied over and not appended to anexisting rbInfo file in wtcustom) prepend one and then regenerate the ResourceBundles for all rbInfo files in wtcustom.
+	  
+                   
+     mvonhasselbach                                                                
+     ====================================================================== -->
+
+<project name="wtinstaller" default="resourceBuildwtCustom">
+    <description>
+            generates resourceBundles for all files included in overwrite/wtCustom in install package
+    </description>
+
+    <!-- =================================
+          target: resourceBuildwtCustom              
+         ================================= -->
+    <target name="resourceBuildwtCustom">
+    	<!--check if all files in wt_custom are complete and not just copied over-->
+    	<foreach target="checkCompleteness_backupOrigGen" param="mySourceFile" inheritAll="true" inheritrefs="true">
+        	<path id="files">
+        		<fileset dir="${wt.home}/wtCustom">
+        			<include name="**/*.rbInfo"/>
+        		</fileset>
+        	</path>
+    	</foreach>
+
+		<ant antfile="tools.xml" dir="${wt.home}/bin" target="bundle_custom">
+	      <property name="srcroot"   location="${wt.home}"/>
+		</ant>  
+		<!--
+			<exec dir="${wt.home}${file.separator}bin" executable="ResourceBuild">
+			  <arg line="wt.lifecycle.StateRB"/>
+			</exec>
+      -->
+    </target>
+
+    <target name="checkCompleteness_backupOrigGen">
+    	<property file="${mySourceFile}"/>
+    	<if>
+  			<not><isset property="ResourceInfo.class"/></not>
+  			<then>
+  				<tempfile property="temp.file"/>
+  				<basename property="temp.file.b" file="${temp.file}"/>
+  				<dirname  property="temp.file.d"  file="${temp.file}"/>
+  				<move file="${mySourceFile}" tofile="${temp.file}"/>
+		    	<concat destfile="${mySourceFile}">
+ResourceInfo.class=wt.tools.resource.StringResourceInfo
+ResourceInfo.customizable=true
+ResourceInfo.deprecated=false
+ResourceInfo.UUID=6b5322ef-9c51-42c9-b978-4efb2d0dbd2c
+
+# Entry Format (values equal to default value are not included)
+# &lt;key&gt;.constant=
+# &lt;key&gt;.value=
+# &lt;key&gt;.comment=
+# &lt;key&gt;.argComment&lt;n&gt;=
+# &lt;key&gt;.customizable=
+# &lt;key&gt;.deprecated=
+
+# Entry Contents
+
+				</concat>    	
+				<concat append="true" destfile="${mySourceFile}">
+					<filelist dir="${temp.file.d}"  files="${temp.file.b}"/>
+         	</concat>
+         	<delete file="${temp.file}"/>
+  			</then>
+  		</if>
+		<dirname  property="mySourceDir" file="${mySourceFile}"/>
+		<basename property="mySourceBN"  file="${mySourceFile}" suffix=".rbInfo"/>
+
+    	<pathconvert property="myDestGenResourceDir" dirsep="${file.separator}">
+    		<map from="${wt.home}${file.separator}wtCustom" to="codebase"/>
+    		<path><pathelement location="${mySourceDir}"/></path>
+    	</pathconvert>
+    	<echo>
+    	myDestGenResourceDir: ${myDestGenResourceDir}
+    	zipfileset dir=${wt.home}${file.separator}${myDestGenResourceDir}
+    	prefix=${myDestGenResourceDir}
+    	includes=${mySourceBN}*.rbInfo
+    	</echo>
+    	<zip destfile="${rollbackZip}" update="true">
+    		<zipfileset dir="${wt.home}${file.separator}${myDestGenResourceDir}" prefix="${myDestGenResourceDir}">
+    			<include name="${mySourceBN}*.class"/>
+    			<include name="${mySourceBN}*.ser"/>
+    		</zipfileset>
+    	</zip>
+    </target>
+
+</project>
+

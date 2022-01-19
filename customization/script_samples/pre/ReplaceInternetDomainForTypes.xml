@@ -1,0 +1,60 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== 
+     mvonhasselbach                                                                
+     ====================================================================== -->
+
+<project name="wtinstaller" default="doReplace">
+    <description>
+		TODO: enhance to take into account the ${wt.codebase}/wt/inf/container/internetDomain.properties
+			where else does the internetDomain come from? script to verify the site.xconf entry for it?
+
+    </description>
+
+    <!-- =================================
+          target: doReplace              
+         ================================= -->
+    <target name="doReplace" depends="" description="--> replace the internetDomain ref in Types to target machine specific value">
+    	<!--basedir is wt-home/customization-->    	
+		<property file="${wt.codebase}/wt/inf/container/SiteOrganization.properties" prefix="soProps"/>
+		<!--reverse order of domain-->
+      <echo>internetDomainOrig=${soProps.wt.inf.container.SiteOrganization.internetDomain}</echo>
+      <!--as a workaround for missing global vars use prop file to store var-->
+		<foreach list="${soProps.wt.inf.container.SiteOrganization.internetDomain}" delimiter="." target="reverseOrder" param="myToken"/>
+		<antcall target="replace" inheritAll="false">
+			<param name="pckgDirRoot" value="${pckgDirRoot}"/>
+		</antcall>
+    </target>
+
+    <!-- - - - - - - - - - - - - - - - - - 
+          target: reverseOrder                      
+         - - - - - - - - - - - - - - - - - -->
+ 	<target name="reverseOrder">
+		<property file="reverseInetDomain.properties"/>
+		<if>
+			<not><isset property="mvh.inetDomain"/></not>
+			<then><property name="mvh.inetDomain" value=""/></then>
+		</if>		
+		<propertyfile file="reverseInetDomain.properties">
+			<entry  key="mvh.inetDomain" operation="=" value="${myToken}.${mvh.inetDomain}"/>
+		</propertyfile>
+	    
+      <echo>internetDomain=${mvh.inetDomain}</echo>
+    </target>
+    <!-- - - - - - - - - - - - - - - - - - 
+          target: replace                      
+         - - - - - - - - - - - - - - - - - -->
+ 	<target name="replace">
+		<echoproperties/>
+		<property file="reverseInetDomain.properties"/>
+      <echo>internetDomain=${mvh.inetDomain}</echo>
+    	<replace dir="${pckgDirRoot}" summary="yes" token="@@internetDomain@@" value="${mvh.inetDomain}">
+    		<include name="modify/site.xconf"/>
+    		<include name="addDB/**/*.xml"/>
+    	</replace>
+    		
+    </target>
+
+
+
+</project>
+

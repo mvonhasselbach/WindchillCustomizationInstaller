@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== 
+     May 29, 2005 7:50:17 PM                                                        
+
+     wtmakejar: windchill's makejar
+                   
+     mvonhasselbach                                                                
+     ====================================================================== -->
+
+<project name="wtinstaller" default="wtmakejar">
+    <description>
+            windchill's makejar
+    </description>
+
+    <!-- =================================
+          target: wtmakejar              
+         ================================= -->
+    <target name="wtmakejar">
+		<ant antfile="MakeJar.xml" dir="${wt.home}/codebase" target="custUpdate"/>        
+		<!--<ant antfile="MakeJar.xml" dir="${wt.home}/codebase" target="buildAllJars"/>-->        
+    </target>
+
+
+</project>
+

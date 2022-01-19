@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== 
+     May 29, 2005 7:50:17 PM                                                        
+
+java wt.load.util.UpdateEditDTDUtility
+java wt.load.util.DTDGenerator
+windchill stop
+windchill start
+                   
+     mvonhasselbach                                                                
+     ====================================================================== -->
+
+<project name="wtinstaller" default="renew_dtd">
+    <description>
+      renews dtd for loaders
+    </description>
+
+    <!-- =================================
+          target: wtmakejar              
+         ================================= -->
+    <target name="renew_dtd">		
+    	<java classpath="${wt.codebase}" classname="wt.load.util.UpdateEditDTDUtility" dir="${wt.home}${file.separator}loadFiles" fork="true"/>
+    	<java classpath="${wt.codebase}" classname="wt.load.util.DTDGenerator" dir="${wt.home}${file.separator}loadFiles" fork="true"/>
+    </target>
+
+
+
+</project>
+

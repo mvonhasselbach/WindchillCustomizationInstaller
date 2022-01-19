@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== 
+     May 20, 2015 7:50:17 PM                                                        
+
+     AddApacheAuthResource: example on Apache config manipulation. 
+	 For further details see the ${wt.home}/apacheConf/config/applyApacheWebAppConfig.xml as a template/example
+                   
+     mvonhasselbach                                                                
+     ====================================================================== -->
+
+<project name="AddApacheAuthResource" default="apply-wiisap-Config">
+    <description>
+            example on Apache config manipulation
+    </description>
+
+    <!-- =================================
+          target: apply-wiisap-Config              
+         ================================= -->
+	<import file="${wt.home}/apacheConf/config/applyApacheWebAppConfig.xml"/>
+
+	  <target name="apply-wiisap-Config" description="Applies wiisap web app configuration to Apache"
+			  depends="-loadPropertiesFile,-verifyInputs"><!--inherited initialization from imported script; 
+			  see comment in there for details when/how to set APACHE_HOME (usually only needed in distributed setups e.g. clusters)-->
+		<ant dir="${APACHE_HOME}" antfile="webAppConfig.xml" target="addAuthResource">
+		  <property name="resource-servlet" location="wiisap"/>
+		</ant>
+	  </target>
+
+</project>

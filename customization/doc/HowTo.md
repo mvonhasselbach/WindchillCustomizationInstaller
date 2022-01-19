@@ -1,5 +1,6 @@
 # Windchill Customization Installer
 aka *EEC Generic Installation Installer*
+This is pretty much a copy of the project Readme.md with slightly modified image links
 
 ## TOC
 - [Summary](#summary)
@@ -52,7 +53,7 @@ ant
 
 The following UI will come up:
 
-![](customization/doc/InstallerGUI.png)
+![](InstallerGUI.png)
 
 Follow the instructions.
 
@@ -334,7 +335,7 @@ ant -f customization/build.xml buildPckg -DsinceDays=2 -Dname=federationBasics
 ````
 creates the following directory structure under <wt.home>/customization:
 
-![](customization/doc/packageFolderStructExample.jpg)
+![](packageFolderStructExample.jpg)
 
 Highlighted in magenta is the package root folder, highlighted in red are the three first level folders, 
 in grey you can see the selected folder with examples of files to modify.
@@ -344,11 +345,11 @@ if it takes 5 - 10 min (on a Laptop) and if the Harddisk really moves.
 
 You can also use the Installer GUI to build a package:
 
-![](customization/doc/BuildPackageGUI.png)
+![](BuildPackageGUI.png)
 
 Use the menu to get to the 'Build Package' functionality.
 
-![](customization/doc/BuildPackageGUI2.png)
+![](BuildPackageGUI2.png)
 
 Specify a package name. This name will be used for the subfolder in <wt.home>/customization where the collected modified files 
 will be copied to. Depending on their type they will be moved intelligently to one of the subfolders (modify or overwrite).
@@ -359,9 +360,9 @@ will be copied to. Depending on their type they will be moved intelligently to o
 - Auto generated overview page of installed Customizations
 
 
-# Installation
+# Installation {#custom-id}
 
-To install the Generic Installer download the installer.zip from the [Releases link](releases) on the right and extract it to <wt.home>.
+To install the Generic Installer download the installer.zip from the [Releases link](../../releases) on the right and extract it to <wt.home>.
 
 
 ## 

@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!DOCTYPE NmLoader SYSTEM "standardX20.dtd">
+<NmLoader>
+ 	<csvExecuteImport handler="wt.load.LoadImport.executeImport">
+ 		<!-- path relative to wt_home -->
+ 	     <csvimportFilename>${mySourceZipFileInWtHome}</csvimportFilename>
+ 	</csvExecuteImport>
+</NmLoader>

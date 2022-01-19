@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== 
+     mvonhasselbach                                                                
+     ====================================================================== -->
+
+<project name="wtinstaller" default="doReplace">
+    <description>
+		Get target environment specific details from the command line as environment properties and replace them in load and config files
+		Use the following patterns:
+    	Command line properties: -D@@propertyName@@=propertyvalue
+    	property replacement syntax in files: @@propertyName@@ will be replaced by teh propertyValue from the command line
+    	The following files will be checked and potentially modified:
+    		modify/site.xconf
+    		addDB/**/*.xml
+    </description>
+
+    <!-- =================================
+          target: doReplace              
+         ================================= -->
+    <target name="doReplace" depends="" description="--> replace the internetDomain ref in Types to target machine specific value">
+    	
+    	<delete file="temp_replacefilter.properties"/>
+    	
+    	<echoproperties regex="^@@.*@@$" destfile="temp_replacefilter.properties"/>
+    	
+    	<replace dir="${pckgDirRoot}" summary="yes" replacefilterfile="temp_replacefilter.properties">
+    		<include name="modify/site.xconf"/>
+    		<include name="addDB/**/*.xml"/>
+    	</replace>
+    	
+    	<delete file="temp_replacefilter.properties"/>
+		    	
+    </target>
+
+</project>
+

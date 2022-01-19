@@ -1,0 +1,1821 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ====================================================================== 
+	$Id: build.xml 3751 2021-11-23 15:08:20Z mvonhasselbach $
+	$LastChangedDate: 2021-11-23 16:08:20 +0100 (Tue, 23 Nov 2021) $
+	$Rev: 3751 $
+	$LastChangedBy: mvonhasselbach $
+	$URL: file:///D:/Tools/databases/svn/localRepos/Projects/installer/trunk/customization/build.xml $
+
+     wtinstaller
+     windchill installer script (collection)
+                   
+     ====================================================================== -->
+
+<project name="wtinstaller" default="UI" basedir=".">
+    <description>
+            windchill installer script collection
+			
+    		the following actions are available:
+			- info: gives basic info on command line arguments for installing
+			- install: see 'info' for its options
+			- buildPckg: command line version of the packaging support; help on options will be provided when addressing the target directly
+			
+			The following script execution hooks are available
+				- executeScripts: executes all ant scripts that are in the ${myPckgName}/scripts directory. This happens as the very first operation before windchill stop (after package extract)
+				- executePreScripts: executes all ant scripts that are in the ${myPckgName}/pre_scripts directory and in the ${myPckgName}/scripts/pre  directory; after windchill stop
+				- executePreXonfAdditionsScripts: executes all ant scripts that are in the ${myPckgName}/scripts/prexconfadditions directory; before xconfadditions
+				- executePreLoadScripts: executes all ant scripts that are in the ${myPckgName}/scripts/preload directory; after windchill start
+				- executePostScripts: executes all ant scripts that are in the ${myPckgName}/post_scripts directory and in the ${myPckgName}/scripts/post directory; at end
+			- installComponents: installs sub-components (i.e. kits that are in ${myPckgName}/comps) in the sequence specified in the ${myPckgName}/comps/comps.properties file. 
+			  The comps are installed before the embracing, originally delivered comp. Nesting of comps is supported but will potentially result in multiple installs of the same component.
+			  This should not be such a big problem as the timestamp-based install prevention (i.e. only the latest will be installed) is applied.
+			  TODO: enhance to recognize that a comp has already been installed.
+			- installDocumentation: add customization documentation to server documentation repository
+			- installCodefileAdditions: adds class files and other resources that will be overwritten, a backup of the originals will be created
+			- installPropFileAdditions: add entries to property files, e.g.: localized action.properties
+			- installXconfFileAdditions: add properties via xconf files
+			- installXmlFileAdditions: add xml-entries to non-dtd't xml files like actions.xml, NavigationAndActions.xml
+			- installIEPackages: installs .ptcdar and .ptctar packages (packages including taskDelegate info)
+			- installLoadfiles: load data to windchill e.g.: reports
+			- installLdifFiles: installs InfoEngine .ldif files with base-tags for adapter or adapterform definitions
+			- windchillStop, windchillStart: stops and starts Windchill
+			
+			Open items:
+			- import: import using IXB Import from zip/jar file (Workaround with extracted export jar files in addDB area)
+			- add2ini: add entries to ini files, e.g. agent.ini (I have the code but the only use case is Visualisatios agent.ini and thus I didn't do it yet),
+								 can be implemented with a pre or preload script (see executePreScripts/executePreLoadScripts before)
+
+			- exportTemplates: export all templates (wf, lc, report, project, product, ...) created7modified after a specified date
+			- exportTypes: export Types and attribute definitions (could be impl with the IXB export?!?)
+
+			- makejars: can be implemented with a preload script (see executePreLoadScripts before)
+
+
+		the following command line switches can be used:
+			-DsuppressRestart or -Dsr: if set, suppresses the automatic restart during the installation process
+			-DforceOverwrite: if set, newer files in wt_home are overwritten by the installer. Otherwise only newer files are copied over.
+			-DforceInstall or -Dfi: if set it does not check if a component is already installed and installs it anyway. Timestamp checking (see -DforceOverwrite) is still done!
+			-DnoSafeArea: if set, no files will be copied to wt_home/wtSafeArea. This will prevent that modified files will be handled when ootb updates are installed (MORs etc.)
+			-Dloglevel: [debug|warning|error] default warning
+			
+    </description>
+	<!-- global props are:
+		env
+		wt.codebase from env.WT_HOME
+		
+	-->	
+	<property environment="env"/>
+
+	<property name="wt.home" value="${env.WT_HOME}"/>
+	<property name="verbose" value="false"/>
+	<taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+	<!-- needed for ant >= 1.6 -->
+	<taskdef resource="net/sf/antcontrib/antlib.xml"/>
+	<property name="installer.version" value="2.0"/>
+    <target name="UI" depends="start" description="--> windchill installer UI">
+		<property file="defaults.txt"/>		
+		<antform title="EEC Customization Installer - Version ${installer.version}" 
+			save="defaults.txt"
+			stylesheet="style.test"
+			image="${wt.codebase}/wt/clients/images/trwilptil.gif"
+			width="660" height="460">
+
+			<AntMenuItem name="Options">
+				<AntMenuItem name="Build Package" target="UI_BuildPckg"/>
+				<AntMenuItem name="Install Single Operations" target="UI_SingleOps"/>
+			</AntMenuItem>				
+
+			<label>
+To install an EEC provided customization, use the following form. 
+Pick an installation package zip/jar, type a Windchill admin user and password ...
+the script will do the rest.
+			</label>
+			<fileSelectionProperty required="true" label="Choose a zip/jar file: " property="file" focus="true"/>
+
+			<separator/>
+			<textProperty required="true" label="Admin User : " property="dbuser" />
+			<textProperty required="true" label="Password :" property="passwd" password="true"/>
+			<!--<booleanProperty label="Execute Install ? " property="isExecute" />-->
+			<controlbar>
+				<button label="OK" type="ok" target="install_UIPre"/>
+				<button label="Cancel" type="cancel" />
+				<button label="Reset" type="reset"/>
+			</controlbar>
+			
+		</antform>
+    </target>
+    <target name="install_UIPre">
+        <if><isset property="name"/>
+        	<then><var name="name"  unset="true"/></then>
+        </if>
+        <antcall target="install"/>
+    </target>
+
+    <target name="UI_BuildPckg" depends="start" description="--> windchill installer UI">
+		<property file="defaults.txt"/>
+		<antform title="EEC Customization Packager" 
+			save="defaults.txt"
+			stylesheet="style.test"
+			image="${wt.codebase}/wt/clients/images/trwilptil.gif"
+			width="660" height="460">
+
+			<AntMenuItem name="Options">
+				<AntMenuItem name="Install Package" target="UI"/>
+				<AntMenuItem name="Install Single Operations" target="UI_SingleOps"/>
+			</AntMenuItem>				
+
+			<label>To start to package a customization, use the following form.</label>
+						
+			<textProperty required="true" label="Package Name : " property="name"  focus="true"/>
+			<textProperty label="Recored all changes since : " property="sinceTime" focus="true"/>
+			<selectionProperty label="Unit : " property="timeUnit" values="days,minutes"/>
+			<controlbar>
+				<button label="OK" type="ok" target="buildPckg_UIPre"/>
+				<button label="Cancel" type="cancel" />
+				<button label="Reset" type="reset"/>
+			</controlbar>			
+		</antform>
+    </target>
+    <target name="buildPckg_UIPre">
+        <if><equals arg1="${timeUnit}" arg2="days"/>
+        	<then><property name="sinceDays" value="${sinceTime}"/></then>
+        	<else><property name="sinceMinutes" value="${sinceTime}"/></else>
+        </if>
+        <antcall target="buildPckg"/>
+    </target>
+
+    <target name="UI_SingleOps" depends="start" description="--> windchill installer UI">
+		<property file="defaults.txt"/>		
+		<antform title="EEC Customization Installer" 
+			save="defaults.txt"
+			stylesheet="style.test"
+			image="${wt.codebase}/wt/clients/images/trwilptil.gif"
+			width="660" height="760">
+
+			<AntMenuItem name="Options">
+				<AntMenuItem name="Install Package" target="UI"/>
+				<AntMenuItem name="Build Package" target="UI_BuildPckg"/>
+			</AntMenuItem>				
+
+			<label>
+To install a EEC provided customization, use the following form. 
+Pick an installation package zip/jar, type a Windchill admin user and password ...
+the script will do the rest.
+			</label>			
+			<fileSelectionProperty required="true" label="Choose a zip/jar file: " property="file" focus="true"/>
+			
+			<separator/>
+			<textProperty required="true" label="Admin User : " property="dbuser" />
+			<textProperty required="true" label="Password :" property="passwd" password="true"/>
+			<separator/>
+			<checkSelectionProperty label="Operations : " property="buildTargets2Execute" values="executeScripts,windchillStop,executePreScripts,installComponents,installDocumentation,installCodefileAdditions,installPropFileAdditions,executePreXconfAdditionsScripts,installXconfFileAdditions,installXmlFileAdditions,installIEPackages,windchillStart,executePreLoadScripts,installLoadfiles,installLdifFiles,executePostScripts"/>
+			<controlbar>
+				<button label="OK" type="ok" target="install_SingleOps"/>
+				<button label="Cancel" type="cancel" />
+				<button label="Reset" type="reset"/>
+			</controlbar>
+			
+		</antform>
+    </target>
+    <target name="install_SingleOps" depends="init">
+        <foreach list="${buildTargets2Execute}" target="execTarget" inheritAll="true" inheritrefs="true" param="buildTarget2Execute"/>
+        <!--<for list="${buildTargets2Execute}" inheritAll="true" inheritrefs="true" param="buildTarget2Execute">
+			<sequential>
+			  <antcall target="_@{buildTarget2Execute}" inheritAll="true" inheritrefs="true" />
+			</sequential>        
+		</for>-->        
+
+        <antcall target="end"/>
+    </target>
+    <target name="execTarget">
+        <antcall target="_${buildTarget2Execute}" inheritAll="true" inheritrefs="true" />
+    </target>
+    
+    <!-- =================================
+          target: install              
+         ================================= -->
+    <target name="install" depends="init,executeScripts,windchillStop,executePreScripts,installComponents,installDocumentation,installCodefileAdditions,installPropFileAdditions,executePreXconfAdditionsScripts,installXconfFileAdditions,installXmlFileAdditions,installIEPackages,windchillStart,executePreLoadScripts,installLoadfiles,installLdifFiles,executePostScripts,end" description="--> windchill installer script collection">
+        
+    </target>
+        
+    <!-- - - - - - - - - - - - - - - - - - 
+          target: start
+	
+	fixes the path delivered by the WT_HOME-environment variable on windows: 
+	if path ends with "\.." the last directory plus "\.." is cut off, e.g. "c:\wt8\bin\.." becomes "c:\wt8"	  
+         - - - - - - - - - - - - - - - - - -->
+	<target name="start" description="fixes wt.home-path, then defines properties and taskdefs">				
+		<if><contains string="${wt.home}" substring="env.WT_HOME"/>
+			<then><fail>.
+			         
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!!!!!!!!!!!!!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You must use a Windchill shell when executing the installer. 
+  WT_HOME variable is not set!
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!!!!!!!!!!!!!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			
+			</fail></then>
+		</if>
+		<propertyregex property="wt.home" override="true" input="${wt.home}" regexp="(.*)\\[^\\]*\\\.\." replace="\1"/>	
+<!-- issues with upper/lower case here on windows -->
+
+	 <pathconvert property="ant.file.check" dirSep="/">
+      <path><pathelement location="${ant.file}"/></path>
+      <map from="${wt.home}" to="generic_installer_test_wt_home"/>
+    </pathconvert>
+		<echo>... mapped ant.file: ${ant.file.check} = 'generic_installer_test_wt_home/customization/build.xml' ...</echo>
+		<if><not><equals arg1="${ant.file.check}" arg2="generic_installer_test_wt_home/customization/build.xml"/></not>
+			<then><fail>
+         
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!!!!!!!!!!!!!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You must extract the installer to the &lt;WT_HOME&gt; directory 
+  and run it from there: ant file=${ant.file}; wt.home=${wt.home}!
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!!!!!!!!!!!!!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			
+			</fail></then>
+		</if>
+
+		<!-- moved Property + Taskdefs into this target so wt.home-var gets fixed prior to this and hence wt.codebase is built using the fixed wt.home-var -->
+		<property name="wt.codebase" value="${wt.home}${file.separator}codebase"/>
+		<property name="wt.safeArea" value="${wt.home}${file.separator}wtSafeArea"/>
+		<property name="wt.siteMod" value="${wt.safeArea}${file.separator}siteMod"/>
+		<property name="wt.ptcOrig" value="${wt.safeArea}${file.separator}ptcOrig"/>
+
+		<path id="ie_cp">
+			<pathelement location="${wt.home}/codebase"/>
+			<pathelement location="${wt.home}/codebase/WEB-INF/lib/install.jar"/>
+			<pathelement location="${wt.home}/codebase/WEB-INF/lib/ieWeb.jar"/>
+			<pathelement location="${wt.home}/codebase/WEB-INF/lib/ie.jar"/>
+			<pathelement location="${wt.home}/codebase/WEB-INF/lib/ie3rdpartylibs.jar"/>
+			<pathelement location="${wt.home}/lib/servlet.jar"/>
+		</path>
+		<taskdef name="installer" classname="com.infoengine.administration.packaging.AntInstaller" classpathref="ie_cp"/>
+		<taskdef name="packager" classname="com.infoengine.administration.packaging.AntPackager" classpathref="ie_cp"/>
+		<taskdef name="packname" classname="com.infoengine.administration.packaging.AntPackageName" classpathref="ie_cp"/>
+		<taskdef name="xmltask" classpath="${wt.home}/customization/lib/xmltask.jar" classname="com.oopsconsultancy.xmltask.ant.XmlTask"></taskdef>
+		<path id="eec_cp">
+			<pathelement location="${wt.home}/customization/lib/eec_utiltasks.jar"/>
+			<pathelement location="${wt.home}/codebase"/>
+		</path>
+		<taskdef name="wtproperties" classname="ext.ant.task.GetWTProperties" classpathref="eec_cp"/>
+		<taskdef name="setLogLevel" classname="ext.ant.task.SetLogLevel" classpathref="eec_cp"/>
+		<taskdef name="setsysprop" classname="ext.ant.task.SetSystemProperty" classpathref="eec_cp"/>
+		<taskdef name="antform" classname="com.sardak.antform.AntForm" classpath="${wt.home}/customization/lib/antform.jar" />
+		<taskdef name="antmenu" classname="com.sardak.antform.AntMenu" classpath="${wt.home}/customization/lib/antform.jar" />
+		<!--TODO: check unix zip capabilities with the 9.0 ant version-->
+		<!--<if><equals arg1="${verbose}" arg2="true" casesensitive="false"/>
+			<then>
+				<property name="logLevel" value="info"/>
+				<setLogLevel level="info"/>
+			</then><else>
+				<property name="logLevel" value="warning"/>
+				<setLogLevel level="warning"/>
+			</else>
+		</if>-->
+      <if><or><isset property="suppressRestart"/><isset property="sr"/></or>
+      	<then>
+      		<echo message="--- Windchill Restart is suppressed ---"/>
+				<property name="doRestart" value="false"/>
+      	</then><else>
+				<property name="doRestart" value="true"/>
+			</else>
+		</if>	
+    	<java classname="wt.util.version.WindchillVersion" outputproperty="windchill.version" fork="true"/>
+
+		<if>
+			<not><or>
+				<contains string="${windchill.version}" substring="ie.12."/>
+				<contains string="${windchill.version}" substring="ie.11."/>
+				<contains string="${windchill.version}" substring="ie.10."/>
+				<contains string="${windchill.version}" substring="ie.9."/>
+			</or></not>
+			<then><fail>
+         
+--------------------------------------!!!!!!!!!!!!!-----------------------------------------
+
+  This version of the Installer only supports Installation on Windchill 9.x, 10.x, 11.x and 12.x. 
+  Check out the correct version of the installer to install on your system!
+
+--------------------------------------!!!!!!!!!!!!!-----------------------------------------
+			
+			</fail></then>
+		</if>
+
+		<property name="loglevel" value="warning"/>
+		<setLogLevel level="${loglevel}"/>
+    </target>
+
+    <!-- - - - - - - - - - - - - - - - - - 
+          target: init                      
+         - - - - - - - - - - - - - - - - - -->
+    <target name="init" depends="getPckg" unless="skipInstall">
+    	<record name="${wt.home}${file.separator}logs${file.separator}${myPckgName}_${tstamp}_install.log" description="install log for ${myPckgName} at ${tstamp}"/>
+    	<echo message="${windchill.version}"/>
+		<!--check for I*E version-->
+    	<mkdir dir="${wt.home}${file.separator}customization${file.separator}rollback"/>
+    	<property name="rollbackZip" value="${wt.home}${file.separator}customization${file.separator}rollback${file.separator}${tstamp}_${myPckgName}_rollback.zip"/>
+    	
+    	<!--<if>
+    		<available file="${wt.home}${file.separator}customization${file.separator}${myPckgName}.zip"/>
+    		<then>
+    			<unzip dest="${wt.home}" src="${wt.home}${file.separator}customization${file.separator}${myPckgName}.zip"/>
+    		</then>
+    	</if>-->    	
+    </target>
+
+    <!-- - - - - - - - - - - - - - - - - - 
+          target: getPckg                      
+         - - - - - - - - - - - - - - - - - -->
+    <target name="getPckg" depends="start">
+    	<tstamp><format property="tstamp" pattern="yyyyMMddHHmmss"/></tstamp>
+    	<if>
+    		<isset property="file"/>
+    		<then>
+    			<basename file="${file}" property="myPckgName" suffix="zip"/>
+				<!--TODO: embed check for existing package here (see installComp) -->
+				<!-- <dirname  property="compDir" file="${compAbsPath}"/> -->
+				<!-- <basename property="compBaseName"  file="${compAbsPath}" suffix="zip"/>		 -->
+				<!-- check if this comp has been installed already: compare ${svnURL}${svnRevision} from doc/${project.name}.properties 
+					 in the kit zip to install compared to %WT_HOME%/customization/doc/${project.name}.properties -->		
+				<var name="skipInstall" unset="true"/>
+				<if><and>
+					<not><isset property="forceInstall"/></not><not><isset property="fi"/></not>
+					<available file="${wt.home}/customization/doc/${myPckgName}.properties"/>
+					</and><then>
+					<echo>Component properties file exists: ${wt.home}/customization/doc/${myPckgName}.properties!</echo>    	
+					<loadproperties>
+						<file file="${wt.home}/customization/doc/${myPckgName}.properties"/>
+						<filterchain><prefixlines prefix="existingInstKit."/></filterchain>			
+					</loadproperties>
+					<loadproperties>
+						<zipentry zipfile="${file}" name="doc/${myPckgName}.properties"/>
+						<filterchain><prefixlines prefix="newInstKit."/></filterchain>			
+					</loadproperties>
+					<!-- <echoproperties/> -->
+					<if><and>
+						<equals arg1="${existingInstKit.svnRevision}/${existingInstKit.svnURL}" arg2="${newInstKit.svnRevision}/${newInstKit.svnURL}"/>
+						<isset property="existingInstKit.support.version.check"/>
+						<isset property="newInstKit.support.version.check"/>
+						</and><then>
+						<!-- skip install -->
+						<property name="skipInstall" value="true"/>
+						<echo>Skipping Installation of comp: ${myPckgName} from file: ${file} as it is already present and up-to-date!</echo>    	
+						<echo>If you want to install the component regardless, either remove or rename the ${wt.home}/customization/doc/${myPckgName}.properties file</echo>
+						<echo>or start the installer with the -DforceInstall=true or -Dfi=true command line option!</echo>    	
+						</then>
+					</if></then>
+				</if>
+				<if><not><isset property="skipInstall"/></not><then>				
+					<if>
+						<available file="${wt.home}${file.separator}customization${file.separator}${myPckgName}" type="dir"/>
+						<then>
+							<zip destfile="${wt.home}${file.separator}customization${file.separator}${myPckgName}_${tstamp}_bak.zip" basedir="${wt.home}${file.separator}customization${file.separator}${myPckgName}"/>
+							<delete dir="${wt.home}${file.separator}customization${file.separator}${myPckgName}"/>
+						</then>
+					</if>
+					<mkdir dir="${wt.home}${file.separator}customization${file.separator}${myPckgName}"/>				
+					<unzip src="${file}" dest="${wt.home}${file.separator}customization${file.separator}${myPckgName}"/>
+					<if>
+						<not><available file="${wt.home}${file.separator}customization${file.separator}${myPckgName}${file.separator}overwrite" type="dir"/></not>
+						<then>
+							<mkdir dir="${wt.home}${file.separator}customization${file.separator}${myPckgName}${file.separator}overwrite"/>
+							<move todir="${wt.home}${file.separator}customization${file.separator}${myPckgName}${file.separator}overwrite">
+								<fileset dir="${wt.home}${file.separator}customization${file.separator}${myPckgName}">
+									<include name="**/*"/>
+									<exclude name="overwrite"/>
+								</fileset>
+							</move>    				
+							<mkdir dir="${wt.home}${file.separator}customization${file.separator}${myPckgName}${file.separator}addDB"/>
+							<mkdir dir="${wt.home}${file.separator}customization${file.separator}${myPckgName}${file.separator}modify"/>
+						</then>
+					</if>
+				</then></if>
+    		</then>
+    		<else>
+    			<if><isset property="name"/>
+			    	<then>
+			    		<property name="myPckgName" value="${name}"/>
+			    		<if>
+			    			<available file="${wt.home}${file.separator}customization${file.separator}${myPckgName}" type="dir"/>
+			    			<then/>
+			    			<else>
+			    				<fail><![CDATA[There is no corresponding subfolder in <wt_home>/customization for the packageName you specified by -Dname]]></fail>
+			    			</else>
+			    		</if>
+			    	</then>
+    				<else>
+    					<fail><![CDATA[You have to specify -Dfile=<zip file to install> or -Dname=<packagename to install>]]></fail>
+    				</else>
+    			</if>
+    		</else>
+    	</if>
+    	<echo>myPckgName: ${myPckgName}</echo>
+    	<property name="pckgDirRoot" value="${wt.home}${file.separator}customization${file.separator}${myPckgName}"></property>
+    </target>
+
+    <!-- - - - - - - - - - - - - - - - - - 
+          target: ensureSafeAreaExists
+         - - - - - - - - - - - - - - - - - -->
+	<target name="ensureSafeAreaExists" description="creates wtSafeArea if necessary">
+		<if>
+			<not><available file="${wt.safeArea}" type="dir"/></not>
+			<then>
+				<echo message="creating new wtSafeArea..."/>
+				<ant antfile="bin${file.separator}swmaint.xml" dir="${wt.home}" target="createSafeArea"/>				
+			</then>
+		</if>	
+	</target>
+
+    <!-- - - - - - - - - - - - - - - - - - 
+          target: end                      
+         - - - - - - - - - - - - - - - - - -->
+    <target name="end">
+    	<zip includes="logs${file.separator}${myPckgName}_${tstamp}_install.log" destfile="${rollbackZip}" basedir="${wt.home}" update="true"></zip>
+    	<if>
+    		<isset property="file"/>
+    		<then>
+		    	<delete dir="${wt.home}${file.separator}customization${file.separator}${myPckgName}" deleteonexit="true" failonerror="false"/>
+    		</then>
+    	</if>    	
+    </target>
+
+    <!-- - - - - - - - - - - - - - - - - - 
+          target: add2siteMod
+          input property: myFile                      
+         - - - - - - - - - - - - - - - - - -->	
+	<target name="add2siteMod" depends="ensureSafeAreaExists" description="--> adds given file to siteMod" unless="noSafeArea">
+		<pathconvert property="mySiteModFile" dirsep="${file.separator}">
+    		<map from="${wt.home}" to="${wt.siteMod}"/>
+    		<path><pathelement location="${myFile}"/></path>
+    	</pathconvert>
+		<!-- copy-task creates the dir if necessary -->
+		<copy file="${myFile}" tofile="${mySiteModFile}" overwrite="true" preservelastmodified="true"/>		
+	</target>
+	 
+    <!-- - - - - - - - - - - - - - - - - - 
+          target: add2ptcOrig
+          input property: myFile                      
+         - - - - - - - - - - - - - - - - - -->
+	<target name="add2ptcOrig" depends="ensureSafeAreaExists" description="--> adds given file to ptcOrig unless the file already exists" unless="noSafeArea">
+		<pathconvert property="myPtcOrigFile" dirsep="${file.separator}">
+    		<map from="${wt.home}" to="${wt.ptcOrig}"/>
+    		<path><pathelement location="${myFile}"/></path>
+    	</pathconvert>
+		<if>
+			<available file="${myPtcOrigFile}" type="file"/>
+			<then>
+				<echo message="file already exists: ${myPtcOrigFile}"/>					
+			</then>
+			<else>
+				<!-- copy-task creates the dir if necessary -->
+				<copy file="${myFile}" tofile="${myPtcOrigFile}" overwrite="true" preservelastmodified="true"/>				
+			</else>
+		</if>
+	</target>
+
+    <!-- - - - - - - - - - - - - - - - - - 
+          target: add2rollback
+          input property: myFile                      
+         - - - - - - - - - - - - - - - - - -->
+    <target name="add2rollback" description="--> adds given file to rollbackZipFile (path relative to wt.home)">
+	   <pathconvert property="myFileRelative" dirsep="${file.separator}">
+    		<map from="${wt.home}${file.separator}" to=""/>
+    		<path><pathelement location="${myFile}"/></path>
+    	</pathconvert>	 
+    	<zip includes="${myFileRelative}" destfile="${rollbackZip}" basedir="${wt.home}" update="true"/>
+    </target>
+
+    <!-- ================================= 
+          target: info              
+         ================================= -->
+    <target name="info" description="--> prints info about required input/cmd line params">
+        <echo><![CDATA[The command should be:
+ant -f build.xml install -Dfile=<filePath> -Ddbuser=<wtadmin_user> -Dpasswd=<wtadmin_pwd>
+     where <filePath>=install zip or jar file name 
+        ]]></echo>
+    </target>
+
+	
+    <!-- ================================= 
+          target: buildPckg
+          param: 	name
+          			sinceDays              
+         ================================= -->
+    <target name="buildPckg" depends="start" description="--> extract changes for packaging">
+    	<if>
+    		<not>
+    			<and>
+    				<or><isset property="sinceDays"/><isset property="sinceMinutes"/></or>    		
+  					<isset property="name"/>
+  				</and>
+  			</not>
+    		<then><fail><![CDATA[use following arguments: ant -f customization/build.xml buildPckg -DsinceDays=<duration to capture changes from> -Dname=<name of pckg to build>
+    			e.g.: ant -f customization/build.xml buildPckg -DsinceDays=6 -Dname=costAggregation. Instead of -DsinceDays you can also use -DsinceMinutes]]></fail>
+    		</then>
+    	</if>
+    	<property name="pckgDirRoot2" value="${wt.home}${file.separator}customization${file.separator}${name}"></property>
+    	<mkdir dir="${pckgDirRoot2}${file.separator}modify"/>
+    	<mkdir dir="${pckgDirRoot2}${file.separator}overwrite"/>
+    	<mkdir dir="${pckgDirRoot2}${file.separator}addDB"/>
+
+    	<if>
+    		<isset property="sinceDays"/>
+    		<then>
+		    	<tstamp><format property="myDateTime" pattern="MM/dd/yyyy hh:mm aa" offset="-${sinceDays}" unit="day"/></tstamp>
+    		</then>
+    	</if>    	
+    	<if>
+    		<isset property="sinceMinutes"/>
+    		<then>
+		    	<tstamp><format property="myDateTime" pattern="MM/dd/yyyy hh:mm aa" offset="-${sinceMinutes}" unit="minute"/></tstamp>
+    		</then>
+    	</if>    	
+
+		<echo>Recording changes since: ${myDateTime}</echo>
+    	<!-- defining 3 filesets -->
+    	<patternset id="basePS">
+    		<exclude name="temp/**"/>
+    		<exclude name="logs/**"/>
+    		<exclude name="tasks/codebase/**"/>
+    		<exclude name="tomcat*/**"/>
+    		<exclude name="vaults/**"/>    	
+    		<exclude name="customization/**"/>    	
+    		<exclude name="**/.xconf-backup/**"/>    	
+    	</patternset>
+    	<selector id="baseSel">
+    		<date datetime="${myDateTime}" when="after"/>    	
+    	</selector>
+		
+    	<patternset id="modifyPS">
+    		<include name="**/*.xconf"/>
+    		<include name="codebase/actio*.properties"/>
+    		<include name="codebase/actions.xml"/>
+       		<include name="codebase/actionmodels.xml"/>
+    		<include name="codebase/nav.xml"/>
+    		<include name="codebase/wt/templateutil/NavigationAndActions.xml"/>
+    		<include name="codebase/*LogicalAttributes.xml"/>
+		</patternset>
+    	<patternset id="addDBPS">
+    		<include name="loadFiles/**/*"/>
+    		<include name="loadXMLFiles/**/*"/>
+    		<include name="**/*ptcdar"/>
+    		<include name="**/*ptctar"/>
+    		<include name="**/*ldif"/>
+    	</patternset>
+    	
+    	<copy todir="${pckgDirRoot2}${file.separator}modify" includeemptydirs="false" overwrite="true">
+    		<fileset id="modify" dir="${wt.home}" followsymlinks="false">
+	    		<patternset refid="basePS"/>
+	    		<patternset refid="modifyPS"/>
+        		<exclude name="customization/**/*ptctar"/>    	
+        		<exclude name="customization/**/*ptcdar"/>    	
+	    	    <selector refid="baseSel"/>
+	    	</fileset>    	
+    		<!--<mapper type="glob" from="${wt.home}*" to="${pckgDirRoot2}{file.separator}modify*"/>-->
+    	</copy>
+    	
+    	<copy todir="${pckgDirRoot2}${file.separator}addDB" includeemptydirs="false" overwrite="true">
+	    	<fileset id="addDB" dir="${wt.home}" followsymlinks="false">
+	    		<patternset refid="basePS"/>
+	    		<patternset refid="addDBPS"/>
+	    		<selector refid="baseSel"/>
+	    	</fileset>
+    	</copy>
+
+    	<copy todir="${pckgDirRoot2}${file.separator}overwrite" includeemptydirs="false" overwrite="true">
+	    	<fileset id="overwrite" dir="${wt.home}" followsymlinks="false">
+	    		<include name="**"/>
+	    		<patternset refid="basePS"/>
+	    		<exclude name="**/*.xconf"/>
+	    		<exclude name="**/*.xconf-*"/>
+	    		<exclude name="**/*.properties"/>
+	    		<exclude name="**/*.properties.annotated"/>
+	    		<exclude name="codebase/actions.xml"/>
+	       		<exclude name="codebase/actionmodels.xml"/>
+	    		<exclude name="codebase/nav.xml"/>
+	    		<exclude name="codebase/wt/templateutil/NavigationAndActions.xml"/>
+	    		<exclude name="codebase/*LogicalAttributes.xml"/>
+	    		<exclude name="loadFiles/**/*"/>
+	    		<exclude name="loadXMLFiles/**/*"/>
+	    		<exclude name="**/*ptcdar"/>
+	    		<exclude name="**/*ptctar"/>
+	    		<exclude name="**/*ldif"/>
+	    		<selector refid="baseSel"/>
+	    	</fileset>
+	    	<fileset id="overwrite2" dir="${wt.home}" followsymlinks="false">	    		
+	    		<include name="codebase/**/*.properties"/>
+	    		<exclude name="**/.xconf-backup/**"/>    	
+	    		<exclude name="codebase/actio*.properties"/>    	
+	    		<exclude name="codebase/WEB-INF/*"/>    	
+				<and>
+		    		<selector refid="baseSel"/>
+		    		<present present="srconly" targetdir="${wt.home}">
+			    		<mapper type="glob" from="*" to="*.annotated"/>
+		    		</present>
+				</and>
+	    	</fileset>
+    	</copy>
+    	
+    </target>
+
+	
+	<!-- ================================= 
+          target: extractChangesSince              
+         ================================= -->
+    <target name="extractChangesSince" depends="init" description="--> extracts changes from wt.home since # of days">
+        <tstamp><format property="myDateTime" pattern="MM/dd/yyyy hh:mm aa" offset="-${sinceDays}" unit="day"/></tstamp>
+		<echo>Recording changes since: ${myDateTime}</echo>
+    	<zip destfile="lastChanges.zip" update="true" basedir="${wt.home}">
+    		<include name="**"/>
+    		<exclude name="temp/**"/>
+    		<exclude name="logs/**"/>
+    		<exclude name="tasks/codebase/**"/>
+    		<exclude name="tomcat*/**"/>
+    		<exclude name="vaults/**"/>
+    		<date datetime="${myDateTime}" when="after"/>    	
+    	</zip>
+    </target>
+
+	
+    <!-- ================================= 
+          target: buildPtcdar              
+         ================================= -->
+    <target name="buildPtcdar" depends="start" description="--> builds a ptc dar file">
+		<mkdir dir="${wt.home}/customization/pckg"/>
+		<packager packageName="${myName}" packageDescription="${myName}" outputDir="${wt.home}/customization/pckg">
+		  <tasks dir="${wt.home}/tasks" refid="${myTaskFileSet}"/>			
+		  <configspecs dir="${wt.home}/conf/dca" refid="${myDcaFileSet}"/>
+		</packager>
+    </target>
+
+	
+<!-- from here collection of reusable targets -->	
+	
+    <!-- ================================= 
+          target: add2xml              
+          property: myXmlFile, relative to wt.codebase
+          property: myPath, e.g.:
+          	/...[position()=last()]
+          property: myPosition (before, after, or under)
+          property: myText
+         ================================= -->
+    <target name="add2xml" description="--> adds entries to the xml file: myXmlFile e.g. in action.xml">
+    	<move file="${wt.home}/${myXmlFile}" 
+    		  tofile="${wt.home}/${myXmlFile}.${tstamp}"/>
+        <xmltask source="${wt.codebase}/${myXmlFile}.${tstamp}"
+        	     dest  ="${wt.codebase}/${myXmlFile}" indent="no" standalone="yes">
+    		 <!--<xmlcatalog refid="dtdMappings"/>-->
+        	<insert path="${myPath}" position="${myPosition}"><![CDATA[${myText}]]></insert>
+        </xmltask>
+    </target>
+
+
+    <!-- ================================= 
+          target: xconf    
+          props: myProperty, myPropFile                    
+         ================================= -->
+    <target name="xconf" description="--> adds wt props via xconfmanager command">
+    	<echo>exec: java ${wt.codebase}${file.separator}WEB-INF${file.separator}lib${file.separator}install.ja -r ${wt.home} -s ${myProperty} -t ${myPropFile} -p</echo>
+	    <java jar="${wt.codebase}${file.separator}WEB-INF${file.separator}lib${file.separator}install.jar" fork="true">
+        	<arg value="-r"/>
+        	<arg value="${wt.home}"/>
+
+        	<arg value="-s"/>
+        	<arg value="${myProperty}"/>
+
+        	<arg value="-t"/>
+        	<arg value="${myPropFile}"/>
+        	<arg value="-p"/>
+        </java>
+    </target>
+
+
+    <!-- ================================= 
+          target: loadFromFile              
+         ================================= -->
+    <target name="loadFromFile" description="--> loads wt data from file">
+    	<condition property="myContPath" value="/"><not><isset property="myContPath"/></not></condition>
+    	<echo>exec: java wt.load.LoadFromFile -u ${dbuser} -p ${passwd} -d ${myFile} -CONT_PATH ${myContPath}</echo>
+    	<java classname="wt.load.LoadFromFile" dir="${wt.home}${file.separator}loadFiles" fork="true">
+    		<arg value="-u"/>
+    		<arg value="${dbuser}"/>
+    		<arg value="-p"/>
+    		<arg value="${passwd}"/>
+    		<arg value="-d"/>
+    		<arg value="${myFile}"/>
+    		<arg value="-CONT_PATH"/>
+    		<arg value="${myContPath}"/>
+    	</java>
+    </target>
+
+
+    <!-- ================================= 
+          target: import              
+         ================================= -->
+    <target name="import" description="--> import using IXB Import from zip/jar file">
+        
+    </target>
+
+    <!-- ================================= 
+          target: loadLdif              
+         ================================= -->
+    <target name="loadLdif" description="--> loads an InfoEngine ldif file">
+    	<java classpathref="ie_cp" classname="com.infoengine.util.LDAPImport" dir="${wt.home}" fork="true">
+    		<arg value="-dir"/>
+    		<arg value="${wt.home}"/>
+    		<arg value="-ldiffile"/>
+    		<arg value="${myFile}"/>
+    	</java>
+    </target>
+
+<!-- section for complete installer -->
+	
+    <!-- ================================= 
+          target: installXmlFileAdditions              
+          input property: myPckgName
+         ================================= -->
+    <target name="installXmlFileAdditions" depends="getPckg,_installXmlFileAdditions"  description="--> installs xml file additions from all files in conf dir"/>
+    <target name="_installXmlFileAdditions" unless="skipInstall">
+    	<property name="confDir" value="${pckgDirRoot}${file.separator}modify"></property>
+    	<echo>Processing confDir: ${confDir}</echo>
+    	<if>
+    		<available file="${confDir}"/>
+    		<then>
+				<setsysprop systemProperty="user.dir" value="${wt.home}/customization" property="backup.user.dir"/>
+		    	<foreach target="add2xmlPrep" param="mySourceFile" inheritAll="true" inheritrefs="true">
+		        	<path id="files">
+		        		<fileset dir="${confDir}">
+		        			<include name="**/*.xml"/>
+		        			<exclude name="codebase/*LogicalAttributes.xml"/>
+		        		</fileset>
+		        	</path>
+		    	</foreach>
+				<setsysprop systemProperty="user.dir" value="${backup.user.dir}"/>
+		    	<!-- add special treatment for *LogicalAttributes.xml -->
+		    	<foreach target="append2xmlOp" param="mySourceFile" inheritAll="true" inheritrefs="true">
+		        	<path id="logicalAttributefiles">
+		        		<fileset dir="${confDir}">
+		        			<include name="codebase/*LogicalAttributes.xml"/>
+		        		</fileset>
+		        	</path>
+		        	<param name="myAppendToken" value="&lt;/LogicalAttributes&gt;"/>
+		    	</foreach>
+		   </then>
+		</if> 
+    </target>
+	
+    <!-- ================================= 
+          target: add2xmlPrep              
+         ================================= -->
+    <target name="add2xmlPrep" description="--> adds entries to xml config files from specifically formated input files">
+        <echo>processing mySourceFile: ${mySourceFile}</echo>
+    	<!-- define source and target file -->
+    	<pathconvert property="myDestFile" dirsep="${file.separator}">
+    		<map from="${confDir}" to="${wt.home}"/>
+    		<path><pathelement location="${mySourceFile}"/></path>
+    	</pathconvert>
+        <echo>	myDestFile: ${myDestFile}</echo>
+		<available file="${myDestFile}" property="myDestFileExist"/>
+    	<fail unless="myDestFileExist" message="Dest File: ${myDestFile} does not exist. Please correct source file name: ${mySourceFile}"/>
+    	
+		<antcall target="add2rollback"><param name="myFile" value="${myDestFile}"/></antcall>
+		<antcall target="add2ptcOrig"><param name="myFile" value="${myDestFile}"/></antcall>	
+    	
+    	<replace file="${myDestFile}" 	token="../../actions.dtd" 			value="actions.dtd"/>
+    	<replace file="${myDestFile}" 	token="../../actionmodels.dtd" 	value="actionmodels.dtd"/>
+    	<!--<setLogLevel level="debug"/>-->
+    	<xmltask source="${mySourceFile}" indent="no" preservetype="true">
+    		 <!--<xmlcatalog refid="dtdMappings"/>-->
+    	    <call path="/modif/fragment" target="add2xmlOp" inheritAll="true">
+    	      <param name="myPath" path="@path"/>
+    	      <param name="myPosition" path="@position"/>
+	      	<param name="myIdentifier" path="@identifier"/>
+    	      <param name="myText" path="text()"/>
+    	    </call> 
+    	</xmltask>        
+    	<!--<setLogLevel level="info"/>-->
+
+		<antcall target="add2siteMod"><param name="myFile" value="${myDestFile}"/></antcall>	
+    </target>
+
+    <!-- ================================= 
+          target: add2xmlOp              
+         ================================= -->
+    <target name="add2xmlOp" description="--> adds new xml entries to dest file">
+    	<echo>	added myText: ${myText} at myPosition: ${myPosition} with myPath: ${myPath}</echo>
+      <if><isset property="myIdentifier"/><then>
+	    	<xmltask source="${myDestFile}" dest="${myDestFile}" indent="no" encoding="utf-8" report="${verbose}"  preservetype="true">
+    		 <!--<xmlcatalog refid="dtdMappings"/>-->
+		   	<remove path="${myIdentifier}"/>
+	    	</xmltask>        
+		</then></if>
+    	<xmltask source="${myDestFile}" dest="${myDestFile}" indent="no" encoding="utf-8" report="${verbose}"  preservetype="true">
+    		 <!--<xmlcatalog refid="dtdMappings"/>-->
+    	    <paste position="${myPosition}" path="${myPath}" xml="${myText}"/>
+    	</xmltask>        
+    </target>
+
+
+     <!-- ================================= 
+          target: installXconfFileAdditions              
+         ================================= -->
+    <target name="installXconfFileAdditions" depends="getPckg,_installXconfFileAdditions"  description="--> installs xconf changes"/>
+    <target name="_installXconfFileAdditions" unless="skipInstall">
+        <property name="confDir" value="${pckgDirRoot}${file.separator}modify"></property>
+    	<echo>Processing confDir: ${confDir}</echo>
+    	<if>
+    		<available file="${confDir}"/>
+    		<then>
+		    	<foreach target="append2xmlOp" param="mySourceFile" inheritAll="true" inheritrefs="true">
+		        	<path id="files">
+		        		<fileset dir="${confDir}">
+		        			<include name="**/*.xconf"/>
+		        		</fileset>
+		        	</path>
+		        	<param name="myAppendToken" value="&lt;/Configuration&gt;"/>
+		    	</foreach>
+				<!-- propagate -->
+		    	<java jar="${wt.codebase}${file.separator}WEB-INF${file.separator}lib${file.separator}install.jar" fork="true">
+		        	<arg value="-r"/>
+		        	<arg value="${wt.home}"/>
+		        	<arg value="-p"/>
+	        </java>    	
+		   </then>
+		</if> 
+    </target>
+	
+	<target name="append2xmlOpNew" description="--> adds entries to xconf files">
+        <echo>processing mySourceFile: ${mySourceFile}</echo>
+    	<!-- define source and target file -->
+    	<pathconvert property="myDestFile" dirsep="${file.separator}">
+    		<map from="${confDir}" to="${wt.home}"/>
+    		<path><pathelement location="${mySourceFile}"/></path>
+    	</pathconvert>
+        <echo>	myDestFile: ${myDestFile}</echo>
+		<available file="${myDestFile}" property="myDestFileExist"/>
+    	<fail unless="myDestFileExist" message="Dest File: ${myDestFile} does not exist. Please correct source file name: ${mySourceFile}"/>
+
+		<loadfile property="sourcefile" srcfile="${mySourceFile}"/>
+		<loadfile property="destFileContent" srcfile="${myDestFile}"/>
+
+		<for param="myAdditions" list="${sourcefile}" trim="true" delimiter="${line.separator}">
+			<sequential>
+				<antcallback target="addToXconf" return="isXconfModified">
+					<param name="myAdditions" value="@{myAdditions}"/>
+				</antcallback>
+			</sequential>
+		</for>
+		<if>
+			<isset property="isXconfModified"/>
+			<then>
+				<antcall target="add2siteMod"><param name="myFile" value="${myDestFile}"/></antcall>	
+			</then>
+		</if>
+	</target>	
+	
+	<target name="addToXconf">
+		<if>
+			<contains string="${destFileContent}" substring="${myAdditions}"/>
+			<then>
+				<echo message="skipping line ${myAdditions} from ${mySourceFile}, content already in ${myDestFile}"/>
+			</then>
+			<else>
+				<if>
+					<not>
+						<isset property="isXconfModified"/>
+					</not>
+					<then> 
+						<antcall target="add2rollback"><param name="myFile" value="${myDestFile}"/></antcall>
+						<antcall target="add2ptcOrig"><param name="myFile" value="${myDestFile}"/></antcall>
+					</then>
+				</if>
+		    	<property name="isXconfModified" value="true"/>
+		    	<echo>	myAppendToken: ${myAppendToken}</echo>
+		    	<echo>	myAdditions: ${myAdditions}</echo>
+		    	<replace file="${myDestFile}" summary="yes" token="${myAppendToken}" value="   ${myAdditions}${line.separator}${myAppendToken}"/>
+			</else>
+		</if>	
+	</target>
+		
+    <!-- ================================= 
+          target: append2xmlOp
+          props: mySourceFile, confDir, myAppendToken              
+         ================================= -->
+    <target name="append2xmlOp" description="--> adds entries to xconf files">
+        <echo>processing mySourceFile: ${mySourceFile}</echo>
+    	<!-- define source and target file -->
+    	<pathconvert property="myDestFile" dirsep="${file.separator}">
+    		<map from="${confDir}" to="${wt.home}"/>
+    		<path><pathelement location="${mySourceFile}"/></path>
+    	</pathconvert>
+        <echo>	myDestFile: ${myDestFile}</echo>
+		<available file="${myDestFile}" property="myDestFileExist"/>
+    	<fail unless="myDestFileExist" message="Dest File: ${myDestFile} does not exist. Please correct source file name: ${mySourceFile}"/>
+
+    	<!-- the easiest is to append the content of the xconfAddOn files to the existing xconf files -->
+    	<loadfile property="myAdditions" srcfile="${mySourceFile}">
+		  <filterchain><fixcrlf/><tokenfilter><filetokenizer/><trim/></tokenfilter></filterchain>
+		</loadfile>
+		<loadfile property="destFileContent" srcFile="${myDestFile}"/>
+		<if>
+			<contains string="${destFileContent}" substring="${myAdditions}"/>
+			<then>
+				<echo message="skipping ${mySourceFile}, content already in ${myDestFile}"/>
+			</then>
+			<else>
+				<antcall target="add2rollback"><param name="myFile" value="${myDestFile}"/></antcall>
+				<antcall target="add2ptcOrig"><param name="myFile" value="${myDestFile}"/></antcall>	
+		    	
+		    	<echo level="verbose">	myAppendToken: ${myAppendToken}</echo>
+		    	<echo level="verbose">	myAdditions: ${myAdditions}</echo>
+				<!-- the replacevalue looks a bit strange but this is just for formatting purpose ('&#13;&#10;' is a newline) -->
+		    	<replace file="${myDestFile}" summary="yes" token="${myAppendToken}" value="&#13;&#10;${myAdditions}&#13;&#10;${myAppendToken}"/>
+
+				<antcall target="add2siteMod"><param name="myFile" value="${myDestFile}"/></antcall>	
+			</else>
+		</if>	
+    </target>
+
+
+    <!-- ================================= 
+          target: installComponents              
+         ================================= -->
+    <target name="installComponents" depends="getPckg,_installComponents"  description="--> installs customization sub-comps to server"/>        
+    <target name="_installComponents" unless="skipInstall">        
+      <property name="confDirP" location="${pckgDirRoot}/components"></property>
+    	<echo>Processing confDir: ${confDirP}</echo>
+		<property name="parent.file" value="${file}"/>
+		<var name="file" unset="true"/>
+		<echo> is file set? -> ${file}</echo>
+    	<if>
+    		<available file="${confDirP}"/>		    		
+    		<then>
+	    	<if>
+	    		<available file="${confDirP}/components.properties"/>		    		
+	    		<then>
+	    			<!--get list of comps and check against available zips/jars in /comp; then install each of it in sequence-->
+	    			<property file="${confDirP}/components.properties" prefix="comp."/>
+			    	<echo>got comp sequence: ${comp.sequence}</echo>
+			    	<foreach list="${comp.sequence}" target="checkCompAvailability" param="mySourceComp" inheritAll="true" inheritrefs="true"/>
+					<property name="compRelPath" value="${confDirP}/"/>
+			    	<foreach list="${comp.sequence}" target="installComp" param="mySourceComp" inheritAll="true" inheritrefs="true"/>
+			   </then>
+			   <else><!-- in this case it is considered that the sequence of installation of comp kits doesn't matter; 
+			   			  restarts will be suppressed for all comp installs-->
+			      <property name="compRelPath" value=""/>
+			    	<foreach target="installComp" param="mySourceComp" inheritAll="true" inheritrefs="true">
+			        	<path id="files">
+			        		<fileset dir="${confDirP}">
+			        			<include name="*.zip"/>
+			        		</fileset>
+			        	</path>		    		
+			    	</foreach>		   	
+			   </else>
+			</if>
+			</then>
+		</if> 
+		<property name="file" value="${parent.file}"/>
+		<echo> is file set? -> ${file}</echo>
+    </target>
+    <target name="checkCompAvailability">        
+    	<echo>Checking availablility of comp: ${mySourceComp}</echo>
+    	<if>
+    		<not><available file="${confDirP}/${mySourceComp}"/></not>
+    		<then>
+		    	<fail message="Component File: ${mySourceComp} does not exist. Please check the package kit!"/>
+		   </then>		   
+		</if> 
+    </target>
+    <target name="installComp">
+		<property name="compAbsPath" location="${compRelPath}${mySourceComp}"/>
+		<echo>Installing comp file: ${compAbsPath}</echo>    	
+		<property name="parent.doRestart" value="${doRestart}"/>
+		<var name="doRestart"  unset="true"/>
+		<if><isset property="comp.${mySourceComp}.requiresRestart"/>
+		<then>
+			<ant antfile="${ant.file}" dir="${basedir}" target="install" inheritAll="false">
+			  <property name="file" value="${compAbsPath}"/>
+			  <property name="dbuser" value="${dbuser}"/>
+			  <property name="passwd" value="${passwd}"/>
+			</ant>
+		</then><else>
+			<ant antfile="${ant.file}" dir="${basedir}" target="install" inheritAll="false">
+			  <property name="file" value="${compAbsPath}"/>
+			  <property name="suppressRestart" value="true"/>
+			  <property name="dbuser" value="${dbuser}"/>
+			  <property name="passwd" value="${passwd}"/>
+			</ant>
+		</else>
+		</if>
+		<property name="doRestart" value="${parent.doRestart}"/>
+    </target>
+    
+    <!-- ================================= 
+          target: installDocumentation              
+         ================================= -->
+    <target name="installDocumentation" depends="getPckg,_installDocumentation"  description="--> installs customization documentation additions to server"/>        
+    <target name="_installDocumentation" unless="skipInstall">        
+        <property name="confDirD" location="${pckgDirRoot}/doc"></property>
+    	<echo>Processing confDir: ${confDirD}</echo>
+    	<if>
+    		<available file="${confDirD}"/>
+    		<then>
+		    	<if>
+		    		<and>
+			    		<available file="${confDirD}/${myPckgName}.properties"/>		    		
+			    		<available file="${wt.home}/customization/doc/${myPckgName}.properties"/>
+			    	</and>
+		    		<then>
+						<antcall target="add2rollback"><param name="myFile" value="${wt.home}/customization/doc/${myPckgName}.properties"/></antcall>
+		    			<property file="${wt.home}/customization/doc/${myPckgName}.properties" prefix="packageProps."/>
+						<propertyregex property="svnRevisionNo" input="${packageProps.svnRevision}" regexp="\$Rev: (\d*) \$" select="\1" />		    			
+		    			<move file="${wt.home}/customization/doc/${myPckgName}.properties" tofile="${wt.home}/customization/doc/${myPckgName}.${svnRevisionNo}.properties"/>		    			
+	    			</then>
+	    		</if>
+		    	<foreach target="addOrReplaceDocumentation" param="mySourceFile" inheritAll="true" inheritrefs="true">
+		        	<path id="files">
+		        		<fileset dir="${confDirD}">
+		        		</fileset>
+		        	</path>
+		    	</foreach>
+		   </then>
+		</if> 
+    </target>
+    
+    <target name="addOrReplaceDocumentation">
+        <echo>processing mySourceFile: ${mySourceFile}</echo>
+    	<!-- define source and target file -->
+    	<pathconvert property="myDestFile" dirsep="${file.separator}">
+    		<map from="${confDirD}" to="${wt.home}${file.separator}customization${file.separator}doc"/>
+    		<path><pathelement location="${mySourceFile}"/></path>
+    	</pathconvert>
+        <echo>	myDestFile: ${myDestFile}</echo>
+      <if>
+    		<available file="${myDestFile}"/>
+    		<then>		
+				<antcall target="add2rollback"><param name="myFile" value="${myDestFile}"/></antcall>
+			</then>
+		</if>
+		<copy file="${mySourceFile}" tofile="${myDestFile}" preservelastmodified="true"/>
+	</target>
+	
+
+    <!-- ================================= 
+          target: installPropFileAdditions              
+         ================================= -->
+    <target name="installPropFileAdditions" depends="getPckg,_installPropFileAdditions"  description="--> installs property file additions that are not handled by xconf"/>        
+    <target name="_installPropFileAdditions" unless="skipInstall">        
+        <property name="confDir" value="${pckgDirRoot}${file.separator}modify"></property>
+    	<echo>Processing confDir: ${confDir}</echo>
+    	<if>
+    		<available file="${confDir}"/>
+    		<then>
+		    	<foreach target="add2propOp" param="mySourceFile" inheritAll="true" inheritrefs="true">
+		        	<path id="files">
+		        		<fileset dir="${confDir}">
+		        			<include name="**/*.properties"/>
+		        			<include name="loadFiles/csvmapfile.txt"/>
+		        			<include name="**/*.html"/>
+		        			<include name="**/*.rbInfo"/>
+		        			<include name="**/*.setup"/>
+		        		</fileset>
+		        	</path>
+		    	</foreach>
+		   </then>
+		</if> 
+    </target>
+
+    <!-- ================================= 
+          target: add2propOp              
+         ================================= -->
+    <target name="add2propOp" description="--> adds entries to prop files">
+        <echo>processing mySourceFile: ${mySourceFile}</echo>
+    	<!-- define source and target file -->
+    	<pathconvert property="myDestFile" dirsep="${file.separator}">
+    		<map from="${confDir}" to="${wt.home}"/>
+    		<path><pathelement location="${mySourceFile}"/></path>
+    	</pathconvert>
+        <echo>	myDestFile: ${myDestFile}</echo>
+      <if>
+    		<available file="${myDestFile}"/>
+    		<then>		
+				<antcall target="add2rollback"><param name="myFile" value="${myDestFile}"/></antcall>
+				<antcall target="add2ptcOrig"><param name="myFile" value="${myDestFile}"/></antcall>	
+		    	
+				<antcall target="appendIfNotExists">
+					<param name="mySourceFile" value="${mySourceFile}"/>
+					<param name="myDestFile" value="${myDestFile}"/>
+				</antcall>
+		    	
+			<!-- following lines replaced by call to appendIfNotExists: -->	
+<!--
+		    	<dirname  property="mySourceDir" file="${mySourceFile}"/>
+		    	<basename property="mySourceBN"  file="${mySourceFile}"/>
+		    	<concat destfile="${myDestFile}" append="true">
+					<filelist dir="${mySourceDir}" files="${mySourceBN}"/>
+				</concat>
+-->								
+				<antcall target="add2siteMod"><param name="myFile" value="${myDestFile}"/></antcall>	
+			</then>
+			<else>
+		    	<echo message="Dest File: ${myDestFile} does not exist. Please check if source file name: ${mySourceFile} requires a destFile! Copying over now instead of appending!"/>
+		    	<copy file="${mySourceFile}" tofile="${myDestFile}" preservelastmodified="true"/>
+			</else>
+		</if>
+	</target>
+	
+	
+    <!-- ================================= 
+          target: 
+	 param mySourceFile
+	 param myDestFile
+         ================================= -->
+	<target name="appendIfNotExists" description="">
+		<if><available file="${myDestFile}"/><then> 
+			<loadfile property="srcFileContent" srcFile="${mySourceFile}"/>
+			<loadfile property="destFileContent" srcFile="${myDestFile}"/>
+			<if>
+				<contains string="${destFileContent}" substring="${srcFileContent}"/>
+				<then>
+					<echo message="skipping ${mySourceFile}, content already in ${myDestFile}"/>
+				</then>
+				<else>
+					<dirname  property="mySourceDir" file="${mySourceFile}"/>
+					<basename property="mySourceBN"  file="${mySourceFile}"/>
+					<concat destfile="${myDestFile}" append="true">
+						 <!-- make sure there is at least one linebreak before the appended content (comment is necessary - otherwise concat would ignore the header) -->
+						<header></header>
+						<filelist dir="${mySourceDir}" files="${mySourceBN}"/>
+					</concat>
+				</else>
+			</if>	
+		</then><else><copy file="${mySourceFile}" tofile="${myDestFile}" preservelastmodified="true"/></else>
+		</if>
+	</target>
+	
+    <!-- ================================= 
+          target: add2propValueOp              
+         ================================= -->
+    <target name="add2propValueOp" depends="" description="--> appends/prepends values to multivalued property entries">
+        <echo>processing mySourceFile: ${mySourceFile}</echo>
+    	<!-- define source and target file -->
+    	<pathconvert property="myDestFile" dirsep="${file.separator}">
+    		<map from="${confDir}" to="${wt.home}"/>
+    		<path><pathelement location="${mySourceFile}"/></path>
+    	</pathconvert>
+        <echo>	myDestFile: ${myDestFile}</echo>
+		<available file="${myDestFile}" property="myDestFileExist"/>
+    	<fail unless="myDestFileExist" message="Dest File: ${myDestFile} does not exist. Please correct source file name: ${mySourceFile}"/>
+
+    	<pathconvert property="myDestFileZip" dirsep="${file.separator}">
+    		<map from="${confDir}${file.separator}" to=""/>
+    		<path><pathelement location="${mySourceFile}"/></path>
+    	</pathconvert>
+    	<zip includes="${myDestFileZip}" destfile="${rollbackZip}" basedir="${wt.home}" update="true"></zip>
+    	<echo>	backup to: ${rollbackZip}</echo>
+		<!-- get prop name value pair -->
+    	<property file="${mySourceFile}"/>
+    	<propertyselector property="append.prop.list" delimiter="," match="append\.(.*)" select="\1" casesensitive="true" />
+   		<foreach list="${prop.list}" delimiter="," target="print.name" param="pack.id">
+   			<param name="" value=""/>
+   		</foreach>
+    	<propertyselector property="prepend.prop.list" delimiter="," match="prepend\.(.*)" select="\1" casesensitive="true" />
+   		<foreach list="${prop.list}" delimiter="," target="add2propValue" param="myPropName">
+   			<param name="myDestFile" value="${myDestFile}"/>
+   		</foreach>
+    </target>
+
+	<!-- ================================= 
+          target: add2propValue
+          property:   myProp
+          property:   myValue
+          property:   myMode [append|prepend]
+         ================================= -->
+    <target name="add2propValue" description="--> adds a value to a multivalued wtProp entry">
+	   	<property file="myDestFile" prefix="destProp"/>
+    	<propertycopy name="destPropValue" from="destProp.${myPropName}" />
+    	<propertycopy name="myValue" from="${myPropName}" />
+		<if>
+			<contains string="${destPropValue}" substring="${myValue}"/>
+			<then>
+				<echo>The specified value: ${myValue} already exists in ${myDestFile} entry: ${myPropName}</echo>
+			</then>
+			<else>
+				<if>
+					<equals arg1="${myMode}" arg2="prepend" casesensitive="false"/>
+					<then>
+			            <antcall target="xconf">
+			            	<param name="myProperty" value="${myProp}=${myValue},${destPropValue}"/>
+			            	<param name="myPropFile" value="${myDestFileZip}"/>
+			            </antcall>
+					</then>
+					<else>
+			            <antcall target="xconf">
+			            	<param name="myProperty" value="${myProp}=${destPropValue},${myValue}"/>
+			            	<param name="myPropFile" value="${myDestFileZip}"/>
+			            </antcall>
+					</else>
+				</if>
+			</else>
+		</if>
+    </target>
+
+    <!-- ================================= 
+          target: installIEPackages              
+         ================================= -->
+    <target name="installIEPackages" depends="getPckg,_installIEPackages"  description="--> installs all ptctar and ptcdar packages"/>
+    <target name="_installIEPackages" unless="skipInstall">
+      <property name="confDirA" value="${pckgDirRoot}${file.separator}addDB"></property>
+
+    	<echo>Processing confDir: ${confDirA}</echo>
+       	<if>
+    		<not><available file="${confDirA}"/></not>
+    		<then>
+    			<mkdir dir="${confDirA}"/>
+		   </then>
+		</if> 
+    		<!--check for ptctar here-->
+    		<echo message="hasInstalledPtctar=false" file="${confDirA}/hasInstalledPtctar.properties" append="false"/>
+		 	<foreach target="installPtctar" param="mySourceFile" inheritAll="true" inheritrefs="true">
+		    	<path id="ptctarfiles">
+		    		<fileset dir="${confDirA}">
+		    			<include name="**/*.ptctar"/>
+		    		</fileset>
+		    	</path>
+	    	</foreach>
+	    	<!--overwriting with content of overwrite/tasks to ensure that this is latest-->
+    		<echo message="hasInstalledPtcdar=false" file="${confDirA}/hasInstalledPtcdar.properties" append="false"/>
+	    	<foreach target="installPtcdar" param="mySourceFile" inheritAll="true" inheritrefs="true">
+		    	<path id="ptcdarfiles">
+		    		<fileset dir="${confDirA}">
+		    			<include name="**/*.ptcdar"/>
+		    		</fileset>
+		    	</path>
+	    	</foreach>
+	    	<!--overwriting with content of overwrite/conf/dca to ensure that this is latest-->
+	    	<!--check for existance of source dirs here-->
+	    	<property file="${confDirA}/hasInstalledPtctar.properties"/>
+	    	<property file="${confDirA}/hasInstalledPtcdar.properties"/>
+	    	<if>
+	    		<available file="${pckgDirRoot}/overwrite/tasks"/>
+				<then> 
+					<echo> included: ${pckgDirRoot}/overwrite/tasks. hasInstalledPtctar: ${hasInstalledPtctar} </echo>
+					<if> 					
+						<equals arg1="${hasInstalledPtctar}" arg2="true"/>
+						<then>
+					    	<copy todir="${wt.home}/tasks" overwrite="true" preservelastmodified="true">
+								<fileset dir="${pckgDirRoot}/overwrite/tasks"/>
+					    	</copy>
+						</then>
+						<else>
+							<!--create default .delegateInfo file-->
+							<if><!--TODO: check and backup and restore ootb .delegateInfo-->
+								<not><available file="${pckgDirRoot}/overwrite/tasks/.delegateInfo"/></not>
+								<then>								
+									<echo message="installDelegate=FALSE" file="${pckgDirRoot}/overwrite/tasks/.delegateInfo"/>
+									<if><available file="${wt.home}/tasks/.delegateInfo"/>
+										<then><copy file="${wt.home}/tasks/.delegateInfo" tofile="${wt.home}/tasks/.delegateInfo.${tstamp}"/></then>
+									</if>
+								</then>
+							</if>
+							<packname packageName="${name}" propertyName="ptctar.packageName" />
+							<echo> building from taskdelegates from file, name: ${ptctar.packageName} </echo>
+							<!--installer doesn't work w/ local files. using command line instead-->
+							<!--<installer propFile="${wt.home}${file.separator}codebase${file.separator}wt.properties" tasks="${pckgDirRoot}${file.separator}overwrite${file.separator}tasks" packageName="${ptctar.packageName}" loadPoint="/" quiet="true"/> -->
+
+							<java classname="com.infoengine.administration.delegate.Installer" fork="true">
+								<arg value="propFile=${wt.home}${file.separator}codebase${file.separator}wt.properties"/>
+								<arg value="tasks=${pckgDirRoot}${file.separator}overwrite${file.separator}tasks"/>
+								<arg value="packageName=${ptctar.packageName}"/>
+								<arg value="loadPoint=/"/>
+								<classpath refid="ie_cp"/>
+							</java>
+							<if><available file="${wt.home}/tasks/.delegateInfo.${tstamp}"/>
+								<then><move file="${wt.home}/tasks/.delegateInfo.${tstamp}" tofile="${wt.home}/tasks/.delegateInfo" overwrite="true"/></then>
+							</if>
+						</else>
+					</if>
+			   </then>
+			</if>
+	    	<if>
+				<and><available file="${pckgDirRoot}/overwrite/dca"/><equals arg1="${hasInstalledPtcdar}" arg2="true"/></and>
+				<then>
+			    	<copy todir="${wt.home}/conf/dca" overwrite="true">
+						<fileset dir="${pckgDirRoot}/overwrite/conf/dca"/>
+			    	</copy>
+			   </then>
+			</if>
+    </target>
+
+    <!-- ================================= 
+          target: installPtctar              
+         ================================= -->
+    <target name="installPtctar" description="--> installs single ptctar file">
+    	<dirname property="hasInstalledPtctar.propfile.dir" file="${mySourceFile}"/>
+    	<echo message="hasInstalledPtctar=true" file="${hasInstalledPtctar.propfile.dir}/hasInstalledPtctar.properties" append="false"/>
+ 		<installer propFile="${wt.home}/codebase/wt.properties" ptcArchive="${mySourceFile}"/>
+    </target>
+
+    <target name="installPtctar2" description="--> installs single ptctar file">
+    	<setLogLevel level="debug"/>
+		<taskdef name="installer2" classname="com.infoengine.administration.delegate.AntInstaller">
+			<classpath>
+				<pathelement location="${wt.home}/codebase/WEB-INF/lib/ie.jar"/>
+				<pathelement location="${wt.home}/codebase/WEB-INF/lib/ie3rdpartylibs.jar"/>
+				<pathelement location="${wt.home}/lib/servlet.jar"/>
+			</classpath>			
+		</taskdef>
+		
+		<echo> paths:${wt.home}/codebase/WEB-INF/lib/ie.jar;${wt.home}/codebase/WEB-INF/lib/ie3rdpartylibs.jar;${wt.home}/lib/servlet.jar</echo>
+		
+ 		<installer2 propFile="${wt.home}/codebase/wt.properties" taskjar="${mySourceFile}"/>
+ 		<setLogLevel level="${logLevel}"/>
+    </target>
+
+
+    <!-- ================================= 
+          target: installPtcdar              
+         ================================= -->
+    <target name="installPtcdar" description="--> installs single ptcdar file">
+    	<dirname property="hasInstalledPtctar.propfile.dir" file="${mySourceFile}"/>
+    	<echo message="hasInstalledPtcdar=true" file="${hasInstalledPtctar.propfile.dir}/hasInstalledPtcdar.properties" append="false"/>
+    	<!-- TODO: backup included .xml files for rollback and sitemod if they already exist -->
+    	<java classname="com.infoengine.administration.dca.Installer" dir="${wt.home}" fork="true">
+    		<classpath refid="ie_cp"/>
+    		<arg value="propFile=${wt.home}/codebase/wt.properties"/>
+    		<arg value="jar=${mySourceFile}"/>
+    	</java>
+    </target>
+
+	
+    <!-- ================================= 
+          target: installCodefileAdditions              
+         ================================= -->
+    <target name="installCodefileAdditions" depends="getPckg,_installCodefileAdditions"  description="--> installs java additions and sitemod changes"/>        
+    <target name="_installCodefileAdditions" unless="skipInstall">        
+      <property name="confDirO" value="${pckgDirRoot}${file.separator}overwrite"></property>
+    	<echo>Processing confDir: ${confDirO}</echo>
+    	<if>
+    		<available file="${confDirO}"/>
+    		<then>
+	    	<foreach target="overwriteCodefileOp" param="mySourceFile" inheritAll="true" inheritrefs="true">
+		    	<path id="files">
+		    		<fileset dir="${confDirO}">
+		    			<include name="**"/>
+		    		</fileset>
+		    	</path>
+	    	</foreach>
+		   </then>
+		</if> 
+    </target>
+
+	  <!-- ================================= 
+	          target: overwriteCodefileOp              
+	         ================================= -->
+	<target name="overwriteCodefileOp" description="--> overwrites files">
+        <echo>processing mySourceFile: ${mySourceFile}</echo>
+    	<!-- define source and target file -->
+    	<pathconvert property="myDestFile" dirsep="${file.separator}">
+    		<map from="${confDirO}" to="${wt.home}"/>
+    		<path><pathelement location="${mySourceFile}"/></path>
+    	</pathconvert>
+        <echo>	myDestFile: ${myDestFile}</echo>		
+		<if>
+			<!-- TODO: add treatment of **/ext/** custom files for sitemod mgmnt -->
+			<available file="${myDestFile}"/>
+			<then><echo level="debug">available</echo>
+				<if>
+					<or>
+						<isset property="forceOverwrite"/>
+						<not><uptodate srcfile="${mySourceFile}" targetfile="${myDestFile}"/></not>
+					</or>
+					<then>
+						<echo level="debug">forceOverwrite or not uptodate</echo>
+						<antcall target="add2rollback"><param name="myFile" value="${myDestFile}"/></antcall>
+						<antcall target="add2ptcOrig"><param name="myFile" value="${myDestFile}"/></antcall>	
+				 		<copy file="${mySourceFile}" tofile="${myDestFile}" overwrite="true" preservelastmodified="true"/>
+						<antcall target="add2siteMod"><param name="myFile" value="${myDestFile}"/></antcall>	
+					</then>
+					<else><echo level="debug">not forceOverwrite and uptodate) - > do nothing!</echo></else>
+				</if>
+			</then>
+			<else>
+				<echo level="debug">not available</echo>
+		 		<copy file="${mySourceFile}" tofile="${myDestFile}" overwrite="${doOverwriteExisting}"/>
+				<antcall target="add2siteMod"><param name="myFile" value="${myDestFile}"/></antcall>	
+			</else>
+		</if>    	
+	</target>
+
+    <!-- ================================= 
+          target: installLoadfiles              
+         ================================= -->
+    <target name="installLoadfiles" depends="getPckg,_installLoadfiles"  description="--> installs all loadfiles in db"/>
+    <target name="_installLoadfiles" unless="skipInstall">
+      <property name="confDirA" value="${pckgDirRoot}${file.separator}addDB"></property>
+		<!-- because content processing (often) requires paths relative to wt.home/loadFiles
+			the potential content files must be copied over and eventually backuped overwritten originals-->
+    	<echo>Processing confDir: ${confDirA}</echo>
+    	<if>
+    		<available file="${confDirA}"/>
+    		<then>
+    			<foreach target="generateZipImportLoadfiles" param="mySourceZip" inheritAll="true" inheritrefs="true">
+		        	<path><!-- for all zips and jars build import loadfile and then treat it as a std loadFile -->
+		        		<fileset dir="${confDirA}">
+		        			<include name="**/*.zip"/>
+		        			<include name="**/*.jar"/>
+		        		</fileset>
+		        	</path>
+		      </foreach>    			
+			 	<foreach target="copyLoadContentDir" param="mySourceDir" inheritAll="true" inheritrefs="true">
+		        	<path id="copyDirs">
+		        		<dirset dir="${confDirA}">
+		        			<!-- all dirs that: 
+		        				1. do not match *=* pattern and thus specify cont_path
+		        				2. are direct subfolders of such a cont_path folder 
+		        				3. OR are direct subfolders of the root folder (/ cont_path)
+		        			-->
+		        			<and>
+		        				<not><filename name="**/*=*"/></not>
+		        				<or>
+		    	    				<filename name="**/*=*/*"/>
+		    	    				<filename name="*"/>
+		        				</or>
+		        			</and>
+		        		</dirset>
+		        	</path>
+		    	</foreach>
+		
+				<pathconvert pathsep="," property="loadfiles">
+		        	<path>
+		        		<fileset dir="${confDirA}">
+		    				<and>
+		    	    			<filename name="**/*.xml"/>
+		    	    			<contains text="SYSTEM &#34;standard" casesensitive="true"/>
+		    				</and>
+		        		</fileset>
+		        	</path>
+				</pathconvert>
+				<sortlist property="loadfilesL" value="${loadfiles}" delimiter="," casesensitive="false"/>                       
+				<foreach target="loadFileOp" param="mySourceFile" list="${loadfilesL}" inheritAll="true" inheritrefs="true"/>
+		   </then>
+		</if> 
+    </target>
+
+	  <!-- ================================= 
+	          target: loadFileOp              
+	         ================================= -->
+	<target name="loadFileOp" description="--> load a single file">
+        <echo>processing mySourceFile: ${mySourceFile}</echo>
+		<!-- calculate cont_path from loadfile dir path -->
+		<dirname file="${mySourceFile}" property="mySourceFileDir"/>
+    	<pathconvert property="myContPath0" dirsep="/">
+    		<map from="${confDirA}" to=""/>
+    		<path><pathelement location="${mySourceFileDir}"/></path>
+    	</pathconvert>
+    	<if>
+    		<or>
+    			<not><isset property="myContPath0"/></not>
+    			<equals arg1="${myContPath0}" arg2=""/>
+				<not><contains string="${myContPath0}" substring="="/></not>
+    		</or>
+    		<then>
+    			<property name="myContPath" value="/"/>
+    		</then>
+    		<else>
+    			<property name="myContPath" value="${myContPath0}"/>
+    		</else>
+    	</if>
+		<echo>myContPath: ${myContPath}</echo>
+		<!-- the following inherits myContPath -->
+		<antcall target="loadFromFile" inheritAll="true">
+			<param name="myFile" value="${mySourceFile}"/>
+		</antcall>
+	</target>
+
+
+    <!-- ================================= 
+          target: generateZipImportLoadfiles              
+         ================================= -->
+    <target name="generateZipImportLoadfiles" 	description="--> generates import loadFile for zip/jar">
+      <echo>processing mySourceZip: ${mySourceZip}</echo>
+		<basename file="${mySourceZip}" property="myFName"/>
+		<property name="mySourceZipFileInWtHome" value="customization${file.separator}${myPckgName}${file.separator}addDB${file.separator}${myFName}"/>
+		<copy file="${wt.home}${file.separator}customization${file.separator}/importLoadfileSample.xml" toFile="${mySourceZip}.xml">
+			<filterchain><expandproperties/></filterchain>
+		</copy>
+    </target>    
+    <!-- ================================= 
+          target: copyLoadContentDir              
+         ================================= -->
+    <target name="copyLoadContentDir" 	description="--> copies dirs to loadFiles">
+        <echo>processing mySourceDir: ${mySourceDir}</echo>
+    	
+    	<dirname file="${mySourceDir}" property="mySourceBaseDir"/>
+    	<foreach target="copyLoadContentFile" param="mySourceFile" inheritAll="true" inheritrefs="true">
+    		<path>
+				<fileset dir="${mySourceDir}">
+				    <include name="**"/>
+				</fileset>
+    		</path>
+    	</foreach>
+    </target>
+ 
+    <!-- ================================= 
+          target: copyLoadContentFile              
+         ================================= -->
+    <target name="copyLoadContentFile" description="--> copies file from loadFile area">
+        <echo>processing mySourceFile: ${mySourceFile}</echo>
+		<pathconvert property="myDestFile" dirsep="${file.separator}">
+    		<map from="${mySourceBaseDir}" to="${wt.home}${file.separator}loadFiles"/>
+    		<path><pathelement location="${mySourceFile}"/></path>
+    	</pathconvert>
+    	
+        <echo>	myDestFile: ${myDestFile}</echo>
+		<if>
+			<!-- TODO: add treatment of **/ext/** custom files for sitemod mgmnt -->
+			<available file="${myDestFile}"/>
+			<then>
+		    	<pathconvert property="myDestFileZip" dirsep="${file.separator}">
+		    		<map from="${wt.home}" to=""/>
+		    		<path><pathelement location="${myDestFile}"/></path>
+		    	</pathconvert>
+		    	<zip includes="${myDestFileZip}" destfile="${rollbackZip}" basedir="${wt.home}" update="true"></zip>
+		    	<echo>	backup to: ${rollbackZip}</echo>
+			</then>
+		</if>    	
+ 		<copy file="${mySourceFile}" tofile="${myDestFile}" overwrite="true" preservelastmodified="true"/>
+    	
+    </target>
+	
+    <!-- ================================= 
+          target: installLdifFiles              
+         ================================= -->
+    <target name="installLdifFiles" depends="getPckg,_installLdifFiles"  description="--> installs ldif files with I*E adapter meta info or I*E adapter config"/>
+    <target name="_installLdifFiles" unless="skipInstall">
+      <property name="confDirA" value="${pckgDirRoot}${file.separator}addDB"></property>
+		<!-- because content processing (often) requires paths relative to wt.home/loadFiles
+			the potential content files must be copied over and eventually backuped overwritten originals-->
+		<wtproperties prefix="wtprops" names="java.rmi.server.hostname"/>
+		<propertyregex property="newBase" input=".${wtprops.java.rmi.server.hostname},&lt;base&gt;" regexp="\." replace=",dc=" casesensitive="true" />
+		<echo message="new base: ${newBase}"/>
+		<property file="${wt.home}/codebase/WEB-INF/ie.properties" prefix="ieprops"/>
+    	<echo>Processing confDir: ${confDirA}</echo>
+     	<if>
+    		<available file="${confDir}"/>
+    		<then>
+		   	<foreach target="ldifFileOp" param="mySourceFile" inheritAll="true" inheritrefs="true">
+		        	<path id="ldiffiles">
+		        		<fileset dir="${confDirA}">
+				 			<include name="**/*.ldif"/>
+		        		</fileset>
+		        	</path>
+		    	</foreach>
+		   </then>
+		</if> 
+    </target>
+
+	  <!-- ================================= 
+	          target: ldifFileOp              
+	         ================================= -->
+	<target name="ldifFileOp" description="--> load a single ldif file">
+		<echo>processing mySourceFile: ${mySourceFile}</echo>
+		<replace file="${mySourceFile}" token=",&lt;base&gt;" value="${newBase}"/>
+
+		<antcall target="loadLdif" inheritAll="true" inheritRefs="true">
+			<param name="myFile" value="${mySourceFile}"/>
+		</antcall>
+	</target>
+	
+	
+    <!-- ================================= 
+          target: executeScripts              
+         ================================= -->
+
+    <target name="executeScripts" depends="getPckg,_executeScripts"  description="--> executes all ant scripts in the script package subdir"/>
+    <target name="_executeScripts" unless="skipInstall">
+    	<antcall target="execScripts" inheritAll="true" >
+    		<param name="confDir" value="scripts"/>
+    	</antcall>
+    </target>
+	
+    <target name="executePreScripts" depends="getPckg,_executePreScripts" description="--> executes all ant scripts in the pre_script package subdir"/>
+    <target name="_executePreScripts" unless="skipInstall">
+    	<antcall target="execScripts" inheritAll="true" >
+    		<param name="confDir" value="pre_scripts"/>
+    	</antcall>
+    	<antcall target="execScripts" inheritAll="true" >
+    		<param name="confDir" value="scripts${file.separator}pre"/>
+    	</antcall>
+    </target>	
+
+    <target name="executePreXconfAdditionsScripts" depends="getPckg,_executePreXconfAdditionsScripts" description="--> executes all ant scripts in the script package subdir"/>
+    <target name="_executePreXconfAdditionsScripts" unless="skipInstall">
+    	<antcall target="execScripts" inheritAll="true" >
+    		<param name="confDir" value="scripts${file.separator}prexconfadditions"/>
+    	</antcall>
+    </target>
+
+    <target name="executePreLoadScripts" depends="getPckg,_executePreLoadScripts" description="--> executes all ant scripts in the script package subdir"/>
+    <target name="_executePreLoadScripts" unless="skipInstall">
+    	<antcall target="execScripts" inheritAll="true" >
+    		<param name="confDir" value="scripts${file.separator}preload"/>
+    	</antcall>
+    </target>	
+	
+    <target name="executePostScripts" depends="getPckg,_executePostScripts"  description="--> executes all ant scripts in the script package subdir"/>
+    <target name="_executePostScripts" unless="skipInstall">
+    	<antcall target="execScripts" inheritAll="true" >
+    		<param name="confDir" value="post_scripts"/>
+    	</antcall>
+    	<antcall target="execScripts" inheritAll="true" >
+    		<param name="confDir" value="scripts${file.separator}post"/>
+    	</antcall>
+    </target>
+	
+	  <!-- ================================= 
+	          target: execScripts              
+	         ================================= -->
+    <target name="execScripts">
+      <property name="confDirS" value="${pckgDirRoot}${file.separator}${confDir}"></property>
+    	<echo>Processing confDir: ${confDirS}</echo>
+    	<if>
+    		<available file="${confDirS}"/>
+    		<then>
+					<pathconvert pathsep="," property="confDirC">
+	        	<path>
+	        		<fileset dir="${confDirS}">
+				 			<include name="*.xml"/>
+	        		</fileset>
+	        	</path>
+					</pathconvert>
+					<sortlist property="confDirCL" value="${confDirC}" delimiter="," casesensitive="false"/>                       
+					<foreach target="executeScript" param="mySourceFile" list="${confDirCL}" inheritAll="true" inheritrefs="true"/>
+    		</then>
+    	</if>
+    </target>
+    
+	  <!-- ================================= 
+	          target: executeScript              
+	         ================================= -->
+	<target name="executeScript" description="--> execute a single ant script file">
+		<echo>processing mySourceFile: ${mySourceFile}</echo>
+		<ant antfile="${mySourceFile}" inheritRefs="true" inheritAll="true"/>
+	</target>
+	
+	  <!-- ================================= 
+	          target: windchillStop and -Start              
+	         ================================= -->
+	<target name="windchillStop" depends="_windchillStop" description="--> execute windchill stop command"/>
+	<target name="_windchillStop"  unless="skipInstall">
+		<if><not><or><isset property="suppressRestart"/><isset property="sr"/></or></not>
+			 <then>
+					<!-- use windchill shell stop to end instance -->
+					<echo>processing windchillStop</echo>
+					<exec dir="${wt.home}${file.separator}bin" executable="windchill">
+					  <arg line="stop"/>
+					</exec>	
+					<!-- Check if installed as a service and terminate the service -->
+					<condition property="isWin"><os family="windows"/></condition>
+					<if><equals arg1="${isWin}" arg2="true" casesensitive="false"/>
+						<then>
+							<wtproperties prefix="wtprops" names="wt.manager.ntServiceName"/>
+							<property name="ntServiceName" value="${wtprops.wt.manager.ntServiceName}"/>
+							 <if><length string="${ntServiceName}" trim="true" when="greater" length="0" /> 
+								<then> 
+									<echo>Service Name: "${ntServiceName}"</echo>
+									<exec executable="cmd.exe" os="${os.name}" outputproperty="execoutput">
+										<arg line='/c net stop "${wtprops.wt.manager.ntServiceName}"'/>
+									</exec>
+								</then>
+							</if>
+						</then>
+					</if>
+			</then>
+		</if>	
+	</target>
+
+	<target name="windchillStart" depends="start,_windchillStart" description="--> execute windchill start command"/>
+	<target name="_windchillStart" unless="skipInstall">
+		<if><not><or><isset property="suppressRestart"/><isset property="sr"/></or></not>
+			<then>
+				<echo>processing windchillStart</echo>
+
+				<!-- Check if installed as a service and start the service -->
+				<wtproperties prefix="wtprops" names="wt.manager.ntServiceName"/>
+				<property name="ntServiceName" value="${wtprops.wt.manager.ntServiceName}"/>
+				<if><and><os family="windows"/><length string="${ntServiceName}" trim="true" when="greater" length="0"/></and>
+					<then> 
+						<echo>Service Name: "${ntServiceName}"</echo>
+						<exec executable="cmd.exe" os="${os.name}" outputproperty="execoutput" resultproperty="WTStarted" failonerror="false">
+							<arg line='/c net start "${wtprops.wt.manager.ntServiceName}"'/>
+						</exec>
+						<!-- if not started start windchill using shell command-->
+						<if><not><equals arg1="${WTStarted}" arg2="0"/></not>
+							<then>
+								<echo>Service could not be started. Starting Windchill using shell command</echo>
+								<forget>
+									<exec dir="${wt.home}${file.separator}bin" executable="windchill">
+									  <arg line="start"/>
+									</exec>
+								</forget>
+							</then>
+						</if>
+					</then>
+					<else>
+						<forget>
+							<exec dir="${wt.home}${file.separator}bin" executable="windchill" outputproperty="windchill.start.output">
+							  <arg line="start"/>
+							</exec>
+							<echo>Process feedback: ${windchill.start.output}</echo>
+						</forget>
+					</else>
+				</if>
+				<!-- only works for wt9.x since tomcat is embedded in wt10 and above-->
+				<if><contains string="${windchill.version}" substring="ie.9."/>
+					<then>
+						<antcall target="_catalinaWebAppReload"/>	
+					</then>
+				</if>
+				<wtproperties prefix="wtprops" names="wt.httpgw.url.anonymous"/>
+				<!--waits 15 minutes and checks every 15 seconds if the server is up again-->
+				<waitfor maxwait="15" maxwaitunit="minute" checkevery="15" checkeveryunit="second">
+					<http url="${wtprops.wt.httpgw.url.anonymous}/wt.httpgw.HTTPServer/echo" />
+				</waitfor>
+			<!--
+				<wtproperties prefix="wtprops" names="wt.server.codebase"/>
+				<waitfor maxwait="3" maxwaitunit="minute" checkevery="15" checkeveryunit="second">
+					<http url="${wtprops.wt.server.codebase}/servlet/ProwtGW" />
+				</waitfor>
+			-->
+			</then>
+		</if>	
+	</target>
+
+	<target name="catalinaWebAppReload" depends="start,_catalinaWebAppReload" description="--> reloads Windchill WebApp in local Tomcat"/>
+    <target name="_catalinaWebAppReload"  unless="skipInstall">
+		<taskdef resource="org/apache/catalina/ant/jmx/jmxaccessor.tasks">
+			<classpath>
+				<fileset file="${wt.home}/customization/lib/catalina-ant.jar"/>
+				<fileset file="${wt.home}/customization/lib/catalina-ant-jmx.jar"/>
+			</classpath>
+		</taskdef>
+		<wtproperties prefix="wtjmxprops" names="wt.server.codebase,wt.webapp.name"/>
+		
+		<trycatch>
+			<try>
+		    	<get src="${wtjmxprops.wt.server.codebase}/wt/jmx/connection/getLocalJmxUrl.jsp" dest=".catalina_jmx_conn"/>
+		    	<loadfile property="catalina_jmx_conn" srcFile=".catalina_jmx_conn"/>
+		    	<delete file=".catalina_jmx_conn"/>
+				<jmxOpen url="${catalina_jmx_conn}"/>
+				<jmxGet
+				   name="Catalina:j2eeType=WebModule,name=//localhost/${wtjmxprops.wt.webapp.name},J2EEApplication=none,J2EEServer=none" 
+				   attribute="startTime"
+				   resultproperty="startTime0"
+				   echo="false"
+				/>
+				<jmxInvoke
+				   name="Catalina:j2eeType=WebModule,name=//localhost/${wtjmxprops.wt.webapp.name},J2EEApplication=none,J2EEServer=none" 
+				   operation="reload"
+				   resultproperty="jmx.status"
+				   echo="true"
+				/>
+				<!--<jmxInvoke
+				   name="com.ptc:wt.servlet.system=WebAppContexts,wt.webAppContext=/${wtjmxprops.wt.webapp.name},wt.subsystem=Monitors,wt.monitorType=ServerManager" 
+				   operation="restartServerManager"
+				   resultproperty="jmx.smstartstatus"
+				   echo="true"
+				/><jmxInvoke
+				   name="com.ptc:wt.servlet.system=WebAppContexts,wt.webAppContext=/${wtjmxprops.wt.webapp.name},wt.subsystem=Monitors,wt.monitorType=ServerManager" 
+				   operation="startServerManager"
+				   resultproperty="jmx.smstartstatus"
+				   echo="true"
+				/>
+				<jmxInvoke
+				   name="com.ptc:wt.servle.system=WebAppContexts,wt.webAppContext=/${wtjmxprops.wt.webapp.name},wt.subsystem=Monitors,wt.monitorType=ServerManager" 
+				   operation="stopServerManager"
+				   resultproperty="jmx.smstopstatus"
+				   echo="true"
+				/>-->
+				<jmxGet
+				   name="Catalina:j2eeType=WebModule,name=//localhost/${wtjmxprops.wt.webapp.name},J2EEApplication=none,J2EEServer=none" 
+				   attribute="startTime"
+				   resultproperty="startTime1"
+				   echo="false"
+				/>
+				<!-- echo the create properties -->
+				<echo>
+				  startTime0: ${startTime0}
+				  startTime1: ${startTime1}
+				</echo>
+			</try>
+			<catch>
+				<echo>Could not restart Tomcat automatically. Please do that manually!</echo>
+			</catch>
+		</trycatch>
+    </target>
+</project>
+

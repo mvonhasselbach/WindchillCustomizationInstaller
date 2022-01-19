@@ -1,0 +1,25 @@
+<!-- XML definition file for actionmodels (groups of actions) -->
+<!-- Within the comments, syntax of the form "objecttype.name" refers to the value of the "name" attribute within the "objecttype" element -->
+
+<!ELEMENT actionmodels ( include | model )* >
+<!ATTLIST actionmodels resourceBundle CDATA #IMPLIED> <!-- specifies the class name of the resource bundle to use for the properties of the actionmodel that are to be localized -->
+
+<!ELEMENT model ( action*, submodel* ) >
+<!ATTLIST model name CDATA #REQUIRED >      <!-- commonly referenced in classes of the form StandardNmDocumentService -->
+<!ATTLIST model menufor CDATA #IMPLIED >      <!-- ? -->
+<!ATTLIST model replace ( true ) #IMPLIED > <!-- determines if this action list will be replaced by see-actions list when user has set that preference -->
+<!ATTLIST model defaultActionName CDATA #IMPLIED >
+<!ATTLIST model defaultActionType CDATA #IMPLIED >
+<!ATTLIST model resourceBundle CDATA #IMPLIED> <!-- specifies the class name of the resource bundle to use for the properties of the actionmodel that are to be localized -->
+
+
+<!ELEMENT action EMPTY >
+<!ATTLIST action name NMTOKEN #REQUIRED >   <!-- these name and type attributes must match an objecttype.name and action.name in an actions.xml -->
+<!ATTLIST action type NMTOKEN #REQUIRED >   <!-- see above -->
+<!ATTLIST action installType CDATA #IMPLIED >   <!-- ? -->
+
+<!ELEMENT submodel EMPTY >
+<!ATTLIST submodel name NMTOKEN #REQUIRED >
+
+<!ELEMENT include EMPTY>
+<!ATTLIST href name CDATA #REQUIRED >

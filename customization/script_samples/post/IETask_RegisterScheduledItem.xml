@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+
+<project default="main" basedir=".">
+
+	<property name="taskUrl" value="/ext/atx/ImportLocDocs_SchedTask.xml" />
+	<property name="queueName" value="ImportLocDocScheduleQueue" />
+	<property name="periodicity" value="240" />
+
+
+	<target name="main">
+		<taskdef name="wtproperties" classname="ext.ant.task.GetWTProperties" classpath="${wt.codebase}" />
+		<wtproperties prefix="wtprops" names="wt.server.codebase" />
+		<get dest="ImportLocDocs_SchedTask.xml" username="${dbuser}" password="${passwd}"
+			src="${wtprops.wt.server.codebase}/servlet/IE/tasks/ext/enterprise/scheduleIETask.xml?taskURL=${taskUrl}&amp;queueName=${queueName}&amp;periodicity=${periodicity}" />
+		<delete file="ImportLocDocs_SchedTask.xml"/>
+	</target>
+
+</project>

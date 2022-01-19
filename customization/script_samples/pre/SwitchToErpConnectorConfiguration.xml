@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== 
+     May 20, 2015 7:50:17 PM                                                        
+
+     SwitchToErpConnectorConfiguration: Switches To the Erp Connector Configuration
+                   
+     mvonhasselbach                                                                
+     ====================================================================== -->
+
+<project name="SwitchToErpConnectorConfiguration" default="SwitchToErpConnectorConfiguration">
+    <description>
+            SwitchToErpConnectorConfiguration script
+    </description>
+
+    <!-- =================================
+          target: SwitchToErpConnectorConfiguration              
+         ================================= -->
+
+	  <target name="SwitchToErpConnectorConfiguration" description="Switches To the Erp Connector Configuration">
+			<ant antfile="codebase/com/ptc/windchill/esi/build.xml" dir="${wt.home}" target="switchto.erp.connector.configuration"/>
+	  </target>
+
+
+</project>
+

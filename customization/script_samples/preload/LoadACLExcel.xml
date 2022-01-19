@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== 
+                   
+     mvonhasselbach                      
+
+	windchill com.inneo.icu.ACLUtility -a load -d "W:\INNEO\ACLUtility\190225_1800_ACL_ptcwch_nir.xlsx" -s "BusinessCaptureACL" -CONT_PATH "/wt.inf.container.OrgContainer=EGO" -DOMAIN "/Default" -u wcadmin -p
+     ====================================================================== -->
+
+<project name="wtinstaller" default="LoadACLsFromExcel"><!-- the default target will be executed by the installer! -->
+    <description>
+    </description>
+
+
+    <target name="LoadACLsFromExcel">
+    	<foreach target="LoadSingleExcel" param="aclLoadExcleFile" inheritAll="true" inheritrefs="true">
+        	<path id="files">
+        		<fileset dir="${wt.home}/aclLoadFiles">
+					<!--you can use ${wt.home} for the Windchill Install dir. Here I assumed that you put the acl.xlsx file 
+						in the /overwrite/aclLoadFiles/ folder in the package and put this script in the /scripts/preload/ folder.
+						An alternative may be to reference the file relative to ${pckgDirRoot}, which is the folder (in %WT_HOME%/customization) 
+						where the package is extracted to. This folder is removed after a successful installer run, 
+						but exists as long as the installer is not finished.
+					-->
+        			<include name="**/*.xlsx"/>
+        		</fileset>
+        	</path>
+    	</foreach>
+    </target>
+
+    <target name="LoadSingleExcel">
+    	<java classpath="${wt.codebase}" classname="com.inneo.icu.ACLUtility" dir="${wt.home}${file.separator}loadFiles" fork="true">
+			<arg value="-a"/>
+			<arg value="load"/>
+			<arg value="-d"/>
+			<arg file="${aclLoadExcleFile}"/>
+			<arg value="-s"/>
+			<arg value="BusinessCaptureACL"/>
+			<arg value="-CONT_PATH"/>
+			<arg value="/wt.inf.container.OrgContainer=EGO"/>
+			<arg value="-DOMAIN"/>
+			<arg value="/Default"/>
+			<arg value="-DOMAIN"/>
+			<arg value="-u"/>
+			<arg value="${dbuser}"/>
+			<arg value="-p"/>
+			<arg value="${passwd}"/>
+			<!-- you can also specify  <arg line="xx xxx cc cccc"/>, see Apache Ant documentation here: https://ant.apache.org/manual-1.9.x/index.html -->
+		</java>
+		<!-- if you want to mark teh file as processed you may rename or move it to another folder here -->
+    	<zip destfile="${rollbackZip}" update="true">
+    		<zipfileset dir="${wt.home}${file.separator}aclLoadFiles" prefix="aclLoadFiles">
+    			<include name="${aclLoadExcleFile}"/>
+    		</zipfileset>
+    	</zip>
+    </target>
+
+</project>
+

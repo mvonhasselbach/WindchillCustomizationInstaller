@@ -1,0 +1,131 @@
+<?xml version="1.0"?>
+<project default="main" basedir=".">
+    <description><![CDATA[
+		This script will replace the owner info in loadfiles for TableViews - which most of the time prevents a straight forward loading of them.
+		The script does the following:
+		1. it invokes an I*E task via the ext.tools.RunListAll class that extracts the detailed info of the admin user 
+			that runs the install and extracts that info to ant properties. This means that you have to make sure that ext.tools.RunListAll and the classes 
+			that it uses must be available on the target system (or part of the package). You may include the devtools_friends.zip package from
+			https://pds.ptc.com/Windchill/app/#ptc1/tcomp/infoPage?oid=VR%3Awt.doc.WTDocument%3A875982493&ContainerOid=OR%3Awt.projmgmt.admin.Project2%3A210608139&u8=1
+			which has the required classes included (simply put it in the /components folder)
+		2. it takes all TableView loadfiles from the addDB folder and merges this info to it at the place where the owner info must be.
+		
+		There are 2 flavors of the merge functionality:
+			1. the more developper-friendly one (target=main) uses XML paths to identify and replace the values. 
+				This means that the developper doesn't have to change anything in the exported files. He just has to unpack them to addDB or one of its subfolders.
+				There are some issues with this approach though: the XML path based replacement requires that the DOCTYPE definition is on one line (alone). 
+				This is usually the case but if there are issues - this could be the root cause!
+			2. the more dummy-proof and install-proof version (target=main2) that requires the developper to replace the ownership element in the TableView loadfile
+				with the section that follows in the xml comment bellow. This method uses token / property replacement and is independant of any xml processing pitfals.
+				If you want to switch to this implementation, you'll have to replace the default target that is mentioned in the first line of this file with 'main2'
+
+				Template to replace in loadfile:
+				
+			  <ownership><ownerRef><WTPrincipalReference classType="wt.org.WTUser" fullName="${tableview.ownership.owner.fullName}" isInternal="false" 
+														surname="${tableview.ownership.owner.surname}" userEmail="${tableview.ownership.owner.surname}">
+					<ufid>${tableview.ownership.owner.ufid}</ufid>
+					<name>${tableview.ownership.owner.name}</name>
+			  </WTPrincipalReference></ownerRef></ownership>
+				
+		]]>
+    </description>
+	<target name="main2">
+		<delete file=".FixOwnerInTableViewLoadfiles.out"/>
+		<delete file=".FixOwnerInTableViewLoadfiles.err"/>
+		<echo>windchill --javaargs='-Dcom.ptc.net.auth.user=${dbuser} -Dcom.ptc.net.auth.password=${passwd}' ext.tools.RunListAll -t com/ptc/windchill/ws/Query.xml -q typeIdentifier wt.org.WTUser supporting-adapter . criteria name='${dbuser}' propertyNames name,fullName,sn,email</echo>
+		<exec dir="${wt.home}${file.separator}bin" executable="windchill" vmlauncher="false" output=".FixOwnerInTableViewLoadfiles.out" error=".FixOwnerInTableViewLoadfiles.err">
+			<arg line="--javaargs='-Dcom.ptc.net.auth.user=${dbuser} -Dcom.ptc.net.auth.password=${passwd}' ext.tools.RunListAll -t com/ptc/windchill/ws/Query.xml -q typeIdentifier wt.org.WTUser supporting-adapter . criteria name='${dbuser}' propertyNames name,fullName,sn,email"/>
+		</exec>	
+
+		<xmltask source=".FixOwnerInTableViewLoadfiles.out">
+		  <copy path="//obid[0]/text()" property="tableview.ownership.owner.ufid" />
+		  <copy path="//sn[0]/text()" property="tableview.ownership.owner.surname" />
+		  <copy path="//fullName[0]/text()" property="tableview.ownership.owner.fullName" />
+		  <copy path="//email[0]/text()" property="tableview.ownership.owner.userEmail" />
+		  <copy path="//name[0]/text()" property="tableview.ownership.owner.name0" />
+		</xmltask>
+		<propertyregex property="tableview.ownership.owner.name" input="${tableview.ownership.owner.name0}"
+              regexp="(.*):(.*)@(.*)" replace="\1|\2|\3"/>		
+
+		<tempfile property="tempAddDB" prefix=".addDBTemp" />
+		<copy todir="${tempAddDB}">
+			<fileset dir="${pckgDirRoot}/addDB">
+				<and>
+					<filename name="**/*.xml"/>
+					<contains text="SYSTEM &#34;standard" casesensitive="true"/>
+					<contains text="&#60;TableViewDescriptor&#62;" casesensitive="true"/>
+				</and>
+			</fileset>
+			<filterchain>
+				<expandproperties />
+			</filterchain>
+		</copy>
+		<copy todir="${pckgDirRoot}" overwrite="true">
+			<fileset dir="${tempAddDB}"/>
+		</copy>
+		<delete dir="${tempAddDB}" />
+		<delete file=".FixOwnerInTableViewLoadfiles.out"/>
+		<delete file=".FixOwnerInTableViewLoadfiles.err"/>		
+	</target>
+	
+	
+	<target name="main">
+		<delete file=".FixOwnerInTableViewLoadfiles.out"/>
+		<delete file=".FixOwnerInTableViewLoadfiles.err"/>
+		<echo>windchill --javaargs='-Dcom.ptc.net.auth.user=${dbuser} -Dcom.ptc.net.auth.password=${passwd}' ext.tools.RunListAll -t com/ptc/windchill/ws/Query.xml -q typeIdentifier wt.org.WTUser supporting-adapter . criteria name='${dbuser}' propertyNames name,fullName,sn,email</echo>
+		<exec dir="${wt.home}${file.separator}bin" executable="windchill" vmlauncher="false" output=".FixOwnerInTableViewLoadfiles.out" error=".FixOwnerInTableViewLoadfiles.err">
+			<arg line="--javaargs='-Dcom.ptc.net.auth.user=${dbuser} -Dcom.ptc.net.auth.password=${passwd}' ext.tools.RunListAll -t com/ptc/windchill/ws/Query.xml -q typeIdentifier wt.org.WTUser supporting-adapter . criteria name='${dbuser}' propertyNames name,fullName,sn,email"/>
+		</exec>	
+
+		<xmltask source=".FixOwnerInTableViewLoadfiles.out">
+		  <copy path="//obid[1]/text()" property="tableview.ownership.owner.ufid0" />
+		  <copy path="//sn[1]/text()" property="tableview.ownership.owner.surname" />
+		  <copy path="//fullName[1]/text()" property="tableview.ownership.owner.fullName" />
+		  <copy path="//email[1]/text()" property="tableview.ownership.owner.userEmail" />
+		  <copy path="//name[1]/text()" property="tableview.ownership.owner.name" />
+		</xmltask>
+		<propertyregex property="tableview.ownership.owner.ufid" input="${tableview.ownership.owner.ufid0}"
+              regexp="(.*):(.*)@(.*)" replace="\1|\2|\3"/>		
+		
+		<foreach target="adjustTableViewLoadfiles" param="mySourceFile" inheritAll="true" inheritrefs="true">
+			<path id="files">
+				<fileset dir="${pckgDirRoot}/addDB">
+					<and>
+						<filename name="**/*.xml"/>
+						<contains text="SYSTEM &#34;standard" casesensitive="true"/>
+						<contains text="&#60;TableViewDescriptor&#62;" casesensitive="true"/>
+					</and>
+				</fileset>
+			</path>
+		</foreach>
+		<delete file=".FixOwnerInTableViewLoadfiles.out"/>
+		<delete file=".FixOwnerInTableViewLoadfiles.err"/>		
+	</target>
+	<target name="adjustTableViewLoadfiles">	
+		<delete file="${mySourceFile}.adjustTableViewLoadfiles_tmp.xml"/>
+		<copy file="${mySourceFile}" tofile="${mySourceFile}.adjustTableViewLoadfiles_tmp2.xml">
+			<filterchain>
+				<linecontains negate="true">
+				  <contains value="DOCTYPE"/>
+				  <contains value="TableViewDescriptor"/>
+				  <contains value="SYSTEM"/>
+				</linecontains>
+			</filterchain>
+		</copy>
+		<property name="tableview.ownership.owner.fullName" value=""/>
+		<property name="tableview.ownership.owner.surname" value=""/>
+		<property name="tableview.ownership.owner.userEmail" value=""/>
+		<echoproperties prefix="tableview.ownership.owner"/>
+		<xmltask source="${mySourceFile}.adjustTableViewLoadfiles_tmp2.xml" dest="${mySourceFile}.adjustTableViewLoadfiles_tmp.xml" system="standardX24.dtd">
+		  <attr path="TableViewDescriptor/ownership/ownerRef/WTPrincipalReference" attr="fullName" value="${tableview.ownership.owner.fullName}"/>
+		  <attr path="TableViewDescriptor/ownership/ownerRef/WTPrincipalReference" attr="surname" value="${tableview.ownership.owner.surname}"/>
+		  <attr path="TableViewDescriptor/ownership/ownerRef/WTPrincipalReference" attr="userEmail" value="${tableview.ownership.owner.userEmail}"/>
+		  <replace path="TableViewDescriptor/ownership/ownerRef/WTPrincipalReference/ufid/text()" withText="${tableview.ownership.owner.ufid}"/>
+		  <replace path="TableViewDescriptor/ownership/ownerRef/WTPrincipalReference/name/text()" withText="${tableview.ownership.owner.name}"/>
+		</xmltask>
+		<copy file="${mySourceFile}.adjustTableViewLoadfiles_tmp.xml" tofile="${mySourceFile}" overwrite="true"/>
+		<delete file="${mySourceFile}.adjustTableViewLoadfiles_tmp2.xml"/>		
+		<delete file="${mySourceFile}.adjustTableViewLoadfiles_tmp.xml"/>		
+	</target>
+	
+</project>

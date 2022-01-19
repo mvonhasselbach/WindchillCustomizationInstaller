@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="GT.WTA.Install" basedir=".">
+	<taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+	<!-- needed for ant >= 1.6 -->
+	<taskdef resource="net/sf/antcontrib/antlib.xml"/>
+    <property environment="env" />
+    <property name="wt.home" value="${env.WT_HOME}"/>
+    <property name="wt.codebase" value="${env.WT_HOME}${file.separator}codebase"/>
+	<property name="minimum.installer.version" value="2.0"/>
+	<fail unless="installer.version">.
+			         
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!!!!!!!!!!!!!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  EEC Installer version not detected or Installer too old! 
+  Please update Installer first! Minimum version is ${minimum.installer.version}
+	  
+  !Installation will abort!
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!!!!!!!!!!!!!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			
+ 	</fail> 
+	<script language="javascript">
+		var vers = parseFloat(project.getProperty("installer.version"));
+		var minvers = parseFloat(project.getProperty("minimum.installer.version"));
+		if (vers >= minvers) {
+			project.setProperty("installer.version.ok","true");
+		}
+	</script>		
+	<fail unless="installer.version.ok">.
+	
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!!!!!!!!!!!!!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  EEC Installer version is too old! 
+  Please update Installer first! Minimum version is ${minimum.installer.version}
+	  
+  !Installation will abort!
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!!!!!!!!!!!!!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	
+	</fail>
+ </project>
+
