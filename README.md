@@ -4,7 +4,7 @@ aka *EEC Generic Installation Installer*
 ## TOC
 - [Summary](#summary)
 - [Usage](#usage)
-	- [Gui Installer](#gui-installer)
+	- [GUI Installer](#gui-installer)
 	- [Command Line Installer](#command-line-installer)
 - [How to Build Installation Packages](#how-to-build-installation-packages)
 	- [Folder Structure Rules](#folder-structure-rules)
