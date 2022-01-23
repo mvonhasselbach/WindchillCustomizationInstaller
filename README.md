@@ -1,5 +1,5 @@
 # Windchill Customization Installer
-aka *EEC Generic Installation Installer*
+aka *EEC Generic Customization Installer*
 
 ## TOC
 - [Summary](#summary)
