@@ -53,6 +53,7 @@
 
 		the following command line switches can be used:
 			-DsuppressRestart or -Dsr: if set, suppresses the automatic restart during the installation process
+			-DsuppressVersionCheck or -Dsvc: if set, suppresses the windchill version check and allow the usage for older and (more importantly) newer Windchill versions
 			-DforceOverwrite: if set, newer files in wt_home are overwritten by the installer. Otherwise only newer files are copied over.
 			-DforceInstall or -Dfi: if set it does not check if a component is already installed and installs it anyway. Timestamp checking (see -DforceOverwrite) is still done!
 			-DnoSafeArea: if set, no files will be copied to wt_home/wtSafeArea. This will prevent that modified files will be handled when ootb updates are installed (MORs etc.)
@@ -275,28 +276,29 @@ the script will do the rest.
 				<setLogLevel level="warning"/>
 			</else>
 		</if>-->
-      <if><or><isset property="suppressRestart"/><isset property="sr"/></or>
-      	<then>
-      		<echo message="--- Windchill Restart is suppressed ---"/>
-				<property name="doRestart" value="false"/>
-      	</then><else>
+		<if><or><isset property="suppressRestart"/><isset property="sr"/></or>
+			<then>
+				<echo message="--- Windchill Restart is suppressed ---"/>
+					<property name="doRestart" value="false"/>
+			</then><else>
 				<property name="doRestart" value="true"/>
 			</else>
-		</if>	
+	   </if>	
     	<java classname="wt.util.version.WindchillVersion" outputproperty="windchill.version" fork="true"/>
 
-		<if>
+		<if><or><isset property="suppressVersionCheck"/><isset property="svc"/>
 			<not><or>
+				<contains string="${windchill.version}" substring="ie.13."/>
 				<contains string="${windchill.version}" substring="ie.12."/>
 				<contains string="${windchill.version}" substring="ie.11."/>
 				<contains string="${windchill.version}" substring="ie.10."/>
 				<contains string="${windchill.version}" substring="ie.9."/>
-			</or></not>
+			</or></not></or>
 			<then><fail>
          
 --------------------------------------!!!!!!!!!!!!!-----------------------------------------
 
-  This version of the Installer only supports Installation on Windchill 9.x, 10.x, 11.x and 12.x. 
+  This version of the Installer only supports Installation on Windchill 9.x, 10.x, 11.x, 12.x. and 13.x.
   Check out the correct version of the installer to install on your system!
 
 --------------------------------------!!!!!!!!!!!!!-----------------------------------------
