@@ -365,7 +365,7 @@ To install the Generic Installer download the installer.zip from the [Releases l
 
 From Windchill 13 on (when using JDK versions >=17) you'll have to also set the ANT_OPTS in wt.properties with the following command in a Windchill shell:
 ````
-xconfmanager -s wt.env.ANT_OPTS="-Xmx1024m --add-opens java.xml/com.sun.org.apache.xpath.internal=ALL-UNNAMED --add-exports java.xml/com.sun.org.apache.xpath.internal.objects=ALL-UNNAMED"
+xconfmanager -p -s wt.env.ANT_OPTS="-Xmx1024m --add-opens java.xml/com.sun.org.apache.xpath.internal=ALL-UNNAMED --add-exports java.xml/com.sun.org.apache.xpath.internal.objects=ALL-UNNAMED"
 ````
 This is needed to allow reflective access in one of the 3rd party libraries used in the installer - this library hasn't been maintained since 2012 and therefore hasn't been ported to JDK > 8.
 
