@@ -374,7 +374,7 @@ When you don't add this xconf setting, you may get the following error message d
 
 You will have to close the Windchill shell and start a new one after this _xconfmanager_ cmd. You don't have to restart Windchill!
 
-Also be aware that from Windchill 13.1 on you'll need the **-lib "%CLASSPATH%"** addition on the command line to provide a complete classpath for the Windchill-specific classes that are added for wt.properties handling.
+Also be aware that from Windchill 13.1 on you'll need the **-lib "%CLASSPATH%"** addition on the command line to provide a complete classpath for the Windchill-specific classes that are added for wt.properties handling. I.e. teh command is not: `ant -lib="%CLASSPATH%"` when you're in the %WT_HOME%/customization directory, see in tehn _Usage_ section above.
 
 #   #
 **Conditions of Use** 
