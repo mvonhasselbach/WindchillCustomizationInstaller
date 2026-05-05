@@ -363,13 +363,16 @@ will be copied to. Depending on their type they will be moved intelligently to o
 
 To install the Generic Installer download the installer.zip from the [Releases link](../../releases) on the right and extract it to <wt.home>.
 
-From Windchill 13 on (when using JDK versions >=17) you'll have to also set the ANT_OPTS in wt.properties with the following command in a Windchill shell:
-`xconfmanager -p -s wt.env.ANT_OPTS="-Xmx1024m --add-opens java.xml/com.sun.org.apache.xpath.internal=ALL-UNNAMED --add-exports java.xml/com.sun.org.apache.xpath.internal.objects=ALL-UNNAMED"`
-This is needed to allow reflective access in one of the 3rd party libraries used in the installer - this library hasn't been maintained since 2012 and therefore hasn't been ported to JDK > 8.  
-When you don't add this xconf setting, you may get the following error message during installations:
-`java.lang.IllegalAccessError: class com.oopsconsultancy.xmltask.jdk15.XPathAnalyser15 (in unnamed module @0x2c7b5824) cannot access class com.sun.org.apache.xpath.internal.XPathAPI (in module java.xml) because module java.xml does not export com.sun.org.apache.xpath.internal to unnamed module @0x2c7b5824`
+From Windchill 13 on (when using JDK versions >=17) you'll have to also set the ANT_OPTS in wt.properties with the following command in a Windchill shell:  
 
-You will have to close and start a new Windchill shell after this _xconfmanager_ cmd. You don't have to restart Windchill!
+`xconfmanager -p -s wt.env.ANT_OPTS="-Xmx1024m --add-opens java.xml/com.sun.org.apache.xpath.internal=ALL-UNNAMED --add-exports java.xml/com.sun.org.apache.xpath.internal.objects=ALL-UNNAMED"`  
+
+This is needed to allow reflective access in one of the 3rd party libraries used in the installer - this library hasn't been maintained since 2012 and therefore hasn't been ported to JDK > 8.  
+When you don't add this xconf setting, you may get the following error message during installations:  
+
+`java.lang.IllegalAccessError: class com.oopsconsultancy.xmltask.jdk15.XPathAnalyser15 (in unnamed module @0x2c7b5824) cannot access class com.sun.org.apache.xpath.internal.XPathAPI (in module java.xml) because module java.xml does not export com.sun.org.apache.xpath.internal to unnamed module @0x2c7b5824`  
+
+You will have to close the Windchill shell and start a new one after this _xconfmanager_ cmd. You don't have to restart Windchill!
 
 Also be aware that from Windchill 13.1 on you'll need the **-lib "%CLASSPATH%"** addition on the command line to provide a complete classpath for the Windchill-specific classes that are added for wt.properties handling.
 
