@@ -244,6 +244,7 @@ the script will do the rest.
 		<property name="wt.safeArea" value="${wt.home}${file.separator}wtSafeArea"/>
 		<property name="wt.siteMod" value="${wt.safeArea}${file.separator}siteMod"/>
 		<property name="wt.ptcOrig" value="${wt.safeArea}${file.separator}ptcOrig"/>
+		<property name="wt.java.classpath" value="${env.CLASSPATH}"/>
 
 		<path id="ie_cp">
 			<pathelement location="${wt.home}/codebase"/>
@@ -284,7 +285,7 @@ the script will do the rest.
 				<property name="doRestart" value="true"/>
 			</else>
 	   </if>	
-    	<java classname="wt.util.version.WindchillVersion" outputproperty="windchill.version" fork="true"/>
+    	<java classname="wt.util.version.WindchillVersion" outputproperty="windchill.version" fork="true" classpath="${wt.java.classpath}"/>
 
 		<if><or><isset property="suppressVersionCheck"/><isset property="svc"/>
 			<not><or>
@@ -681,7 +682,7 @@ ant -f build.xml install -Dfile=<filePath> -Ddbuser=<wtadmin_user> -Dpasswd=<wta
          ================================= -->
     <target name="xconf" description="--> adds wt props via xconfmanager command">
     	<echo>exec: java ${wt.codebase}${file.separator}WEB-INF${file.separator}lib${file.separator}install.ja -r ${wt.home} -s ${myProperty} -t ${myPropFile} -p</echo>
-	    <java jar="${wt.codebase}${file.separator}WEB-INF${file.separator}lib${file.separator}install.jar" fork="true">
+	    <java jar="${wt.codebase}${file.separator}WEB-INF${file.separator}lib${file.separator}install.jar" fork="true" classpath="${wt.java.classpath}">
         	<arg value="-r"/>
         	<arg value="${wt.home}"/>
 
@@ -701,7 +702,7 @@ ant -f build.xml install -Dfile=<filePath> -Ddbuser=<wtadmin_user> -Dpasswd=<wta
     <target name="loadFromFile" description="--> loads wt data from file">
     	<condition property="myContPath" value="/"><not><isset property="myContPath"/></not></condition>
     	<echo>exec: java wt.load.LoadFromFile -u ${dbuser} -p ${passwd} -d ${myFile} -CONT_PATH ${myContPath}</echo>
-    	<java classname="wt.load.LoadFromFile" dir="${wt.home}${file.separator}loadFiles" fork="true">
+    	<java classname="wt.load.LoadFromFile" dir="${wt.home}${file.separator}loadFiles" fork="true" classpath="${wt.java.classpath}">
     		<arg value="-u"/>
     		<arg value="${dbuser}"/>
     		<arg value="-p"/>
@@ -725,7 +726,7 @@ ant -f build.xml install -Dfile=<filePath> -Ddbuser=<wtadmin_user> -Dpasswd=<wta
           target: loadLdif              
          ================================= -->
     <target name="loadLdif" description="--> loads an InfoEngine ldif file">
-    	<java classpathref="ie_cp" classname="com.infoengine.util.LDAPImport" dir="${wt.home}" fork="true">
+    	<java classpathref="ie_cp" classname="com.infoengine.util.LDAPImport" dir="${wt.home}" fork="true" classpath="${wt.java.classpath}">
     		<arg value="-dir"/>
     		<arg value="${wt.home}"/>
     		<arg value="-ldiffile"/>
@@ -840,7 +841,7 @@ ant -f build.xml install -Dfile=<filePath> -Ddbuser=<wtadmin_user> -Dpasswd=<wta
 		        	<param name="myAppendToken" value="&lt;/Configuration&gt;"/>
 		    	</foreach>
 				<!-- propagate -->
-		    	<java jar="${wt.codebase}${file.separator}WEB-INF${file.separator}lib${file.separator}install.jar" fork="true">
+		    	<java jar="${wt.codebase}${file.separator}WEB-INF${file.separator}lib${file.separator}install.jar" fork="true" classpath="${wt.java.classpath}">
 		        	<arg value="-r"/>
 		        	<arg value="${wt.home}"/>
 		        	<arg value="-p"/>
@@ -1288,7 +1289,7 @@ ant -f build.xml install -Dfile=<filePath> -Ddbuser=<wtadmin_user> -Dpasswd=<wta
 							<!--installer doesn't work w/ local files. using command line instead-->
 							<!--<installer propFile="${wt.home}${file.separator}codebase${file.separator}wt.properties" tasks="${pckgDirRoot}${file.separator}overwrite${file.separator}tasks" packageName="${ptctar.packageName}" loadPoint="/" quiet="true"/> -->
 
-							<java classname="com.infoengine.administration.delegate.Installer" fork="true">
+							<java classname="com.infoengine.administration.delegate.Installer" fork="true" classpath="${wt.java.classpath}">
 								<arg value="propFile=${wt.home}${file.separator}codebase${file.separator}wt.properties"/>
 								<arg value="tasks=${pckgDirRoot}${file.separator}overwrite${file.separator}tasks"/>
 								<arg value="packageName=${ptctar.packageName}"/>
@@ -1345,7 +1346,7 @@ ant -f build.xml install -Dfile=<filePath> -Ddbuser=<wtadmin_user> -Dpasswd=<wta
     	<dirname property="hasInstalledPtctar.propfile.dir" file="${mySourceFile}"/>
     	<echo message="hasInstalledPtcdar=true" file="${hasInstalledPtctar.propfile.dir}/hasInstalledPtcdar.properties" append="false"/>
     	<!-- TODO: backup included .xml files for rollback and sitemod if they already exist -->
-    	<java classname="com.infoengine.administration.dca.Installer" dir="${wt.home}" fork="true">
+    	<java classname="com.infoengine.administration.dca.Installer" dir="${wt.home}" fork="true" classpath="${wt.java.classpath}">
     		<classpath refid="ie_cp"/>
     		<arg value="propFile=${wt.home}/codebase/wt.properties"/>
     		<arg value="jar=${mySourceFile}"/>
