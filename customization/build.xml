@@ -219,6 +219,7 @@ the script will do the rest.
 			</fail></then>
 		</if>
 		<propertyregex property="wt.home" override="true" input="${wt.home}" regexp="(.*)\\[^\\]*\\\.\." replace="\1"/>	
+		<propertyregex property="wt.home" override="true" input="${wt.home}" regexp="(.*)\/[^\/]*\/\.\." replace="\1"/>	
 <!-- issues with upper/lower case here on windows -->
 
 	 <pathconvert property="ant.file.check" dirSep="/">
