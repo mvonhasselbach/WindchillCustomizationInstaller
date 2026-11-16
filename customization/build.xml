@@ -288,8 +288,9 @@ the script will do the rest.
 	   </if>	
     	<java classname="wt.util.version.WindchillVersion" outputproperty="windchill.version" fork="true" classpath="${wt.java.classpath}"/>
 
-		<if><or><isset property="suppressVersionCheck"/><isset property="svc"/>
+		<if><or><not><or><isset property="suppressVersionCheck"/><isset property="svc"/></or></not>
 			<not><or>
+				<contains string="${windchill.version}" substring="ie.14."/>
 				<contains string="${windchill.version}" substring="ie.13."/>
 				<contains string="${windchill.version}" substring="ie.12."/>
 				<contains string="${windchill.version}" substring="ie.11."/>
@@ -438,9 +439,10 @@ the script will do the rest.
          - - - - - - - - - - - - - - - - - -->
     <target name="end">
     	<zip includes="logs${file.separator}${myPckgName}_${tstamp}_install.log" destfile="${rollbackZip}" basedir="${wt.home}" update="true"></zip>
-    	<if>
-    		<isset property="file"/>
-    		<then>
+    	<if><and>
+				<not><isset property="noCleanup"/></not>
+				<isset property="file"/>
+    		</and><then>
 		    	<delete dir="${wt.home}${file.separator}customization${file.separator}${myPckgName}" deleteonexit="true" failonerror="false"/>
     		</then>
     	</if>    	
@@ -1506,8 +1508,14 @@ ant -f build.xml install -Dfile=<filePath> -Ddbuser=<wtadmin_user> -Dpasswd=<wta
          ================================= -->
     <target name="generateZipImportLoadfiles" 	description="--> generates import loadFile for zip/jar">
       <echo>processing mySourceZip: ${mySourceZip}</echo>
-		<basename file="${mySourceZip}" property="myFName"/>
-		<property name="mySourceZipFileInWtHome" value="customization${file.separator}${myPckgName}${file.separator}addDB${file.separator}${myFName}"/>
+		<!-- TODO: fix path: map base path instead. Right now, the container path parts are missing! -->
+		<!-- <basename file="${mySourceZip}" property="myFName"/>
+		<property name="mySourceZipFileInWtHome" value="customization${file.separator}${myPckgName}${file.separator}addDB${file.separator}${myFName}"/> -->
+    	<pathconvert property="mySourceZipFileInWtHome" dirsep="/">
+    		<map from="${wt.home}" to=""/>
+    		<path><pathelement location="${mySourceZip}"/></path>
+    	</pathconvert>		
+      <echo>generated mySourceZipFileInWtHome: ${mySourceZipFileInWtHome} from confDirA: ${confDirA} and mySourceZip: ${mySourceZip}</echo>
 		<copy file="${wt.home}${file.separator}customization${file.separator}/importLoadfileSample.xml" toFile="${mySourceZip}.xml">
 			<filterchain><expandproperties/></filterchain>
 		</copy>
@@ -1821,5 +1829,28 @@ ant -f build.xml install -Dfile=<filePath> -Ddbuser=<wtadmin_user> -Dpasswd=<wta
 			</catch>
 		</trycatch>
     </target>
+	
+	<macrodef name="antcall2">
+		<attribute name="target"/>
+		<attribute name="inheritAll" default="true"/>
+		<attribute name="inheritrefs" default="false"/>
+		<element name="body" implicit="yes" optional="yes"/>
+		<sequential>
+			<echo>ANTCALL2 :)</echo>
+			<!--TODO: use SetLogLevel here instead - enhanced with depth/index/firstOnly and property/variable storage of previous value -->
+			<script language="javascript">
+				project.setProperty("antcall2.last.log.level", project.getBuildListeners().firstElement().getMessageOutputLevel())
+				project.getBuildListeners().firstElement().setMessageOutputLevel(0);
+			</script>			
+			<antcall target="@{target}" inheritAll="@{inheritAll}" inheritrefs="@{inheritrefs}">
+				<body/>
+			</antcall>
+			<script language="javascript">
+				// restore last log level
+				project.getBuildListeners().firstElement().setMessageOutputLevel(project.getProperty("antcall2.last.log.level"));
+			</script>
+		</sequential>
+	</macrodef>	
+	
 </project>
 
