@@ -288,20 +288,21 @@ the script will do the rest.
 	   </if>	
     	<java classname="wt.util.version.WindchillVersion" outputproperty="windchill.version" fork="true" classpath="${wt.java.classpath}"/>
 
-		<if><or><not><or><isset property="suppressVersionCheck"/><isset property="svc"/></or></not>
-			<not><or>
+		<if><not><or>
+				<isset property="suppressVersionCheck"/>
+				<isset property="svc"/>
 				<contains string="${windchill.version}" substring="ie.14."/>
 				<contains string="${windchill.version}" substring="ie.13."/>
 				<contains string="${windchill.version}" substring="ie.12."/>
 				<contains string="${windchill.version}" substring="ie.11."/>
 				<contains string="${windchill.version}" substring="ie.10."/>
 				<contains string="${windchill.version}" substring="ie.9."/>
-			</or></not></or>
+			</or></not>
 			<then><fail>
          
 --------------------------------------!!!!!!!!!!!!!-----------------------------------------
 
-  This version of the Installer only supports Installation on Windchill 9.x, 10.x, 11.x, 12.x. and 13.x.
+  This version of the Installer only supports Installation on Windchill 9.x, 10.x, 11.x, 12.x., 13.x. and 14.x
   Check out the correct version of the installer to install on your system!
 
 --------------------------------------!!!!!!!!!!!!!-----------------------------------------
